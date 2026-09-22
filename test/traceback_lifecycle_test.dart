@@ -34,7 +34,7 @@ void main() {
       );
 
       expect(registered.id, isNotEmpty);
-      expect(registered.tracebackId, startsWith('TB-LAPTOP-'));
+      expect(registered.tracebackId, startsWith('TB-'));
       expect(registered.category, equals(AssetCategory.electronics));
       expect(registered.brand, equals('Apple'));
       expect(registered.status, equals(AssetStatus.safe));
@@ -127,24 +127,24 @@ void main() {
       expect(persistedAsset.trackingEnabled, isFalse);
     });
 
-    test('Unique Traceback ID format follows TB-<CATEGORY>-<SEQ> pattern', () async {
+    test('Unique Traceback ID format follows TB-XXXXXX pattern', () async {
       final bike = await provider.registerBelonging(
         name: 'Firefox Mountain Bike',
         category: AssetCategory.vehicle,
       );
-      expect(bike.tracebackId, matches(r'^TB-BIKE-\d{3,}$'));
+      expect(bike.tracebackId, matches(r'^TB-[2-9A-Z]{6}$'));
 
       final phone = await provider.registerBelonging(
         name: 'iPhone 15',
         category: AssetCategory.phone,
       );
-      expect(phone.tracebackId, matches(r'^TB-PHONE-\d{3,}$'));
+      expect(phone.tracebackId, matches(r'^TB-[2-9A-Z]{6}$'));
 
       final keys = await provider.registerBelonging(
         name: 'Hostel Key Bundle',
         category: AssetCategory.belonging,
       );
-      expect(keys.tracebackId, matches(r'^TB-ITEM-\d{3,}$'));
+      expect(keys.tracebackId, matches(r'^TB-[2-9A-Z]{6}$'));
     });
 
     test('Stop Trace disables active tracking', () async {

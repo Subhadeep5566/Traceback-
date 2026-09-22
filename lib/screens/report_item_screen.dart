@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:provider/provider.dart';
 import '../models/asset.dart';
 import '../providers/asset_provider.dart';
 import '../services/location_service.dart';
+import 'map_location_picker_screen.dart';
 
 class ReportItemScreen extends StatefulWidget {
   final Asset? initialAsset;
   final String? initialAssetId;
-  final String initialReason; // 'Lost' or 'Stolen'
 
   const ReportItemScreen({
     super.key,
     this.initialAsset,
     this.initialAssetId,
-    this.initialReason = 'Lost',
   });
 
   @override
@@ -25,17 +26,20 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
 
-  late String _selectedReason;
   String? _selectedAssetId;
+  DateTime _selectedDateTime = DateTime.now();
+  double? _latitude;
+  double? _longitude;
   bool _isDetectingLocation = false;
   bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _selectedReason = widget.initialReason;
     _selectedAssetId = widget.initialAsset?.id ?? widget.initialAssetId;
     _locationController.text = widget.initialAsset?.address ?? 'BGU Campus, Bhubaneswar';
+    _latitude = widget.initialAsset?.latitude ?? LocationService.bhubaneswarLatitude;
+    _longitude = widget.initialAsset?.longitude ?? LocationService.bhubaneswarLongitude;
   }
 
   @override
@@ -45,12 +49,40 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
     super.dispose();
   }
 
-  Future<void> _useCurrentLocation() async {
+  Future<void> _pickDateTime() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateTime,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now(),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+    );
+    if (pickedTime == null || !mounted) return;
+
+    setState(() {
+      _selectedDateTime = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
+    });
+  }
+
+  Future<void> _detectLocation() async {
     setState(() => _isDetectingLocation = true);
     try {
       final loc = await LocationService.getCurrentLocation();
       if (mounted) {
         setState(() {
+          _latitude = loc.latitude;
+          _longitude = loc.longitude;
           _locationController.text = loc.address;
           _isDetectingLocation = false;
         });
@@ -60,10 +92,40 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
     }
   }
 
-  Future<void> _submitReport(AssetProvider provider) async {
-    if (_selectedAssetId == null || _selectedAssetId!.isEmpty) {
+  Future<void> _pickOnMap() async {
+    final initialPos = (_latitude != null && _longitude != null)
+        ? ll.LatLng(_latitude!, _longitude!)
+        : const ll.LatLng(
+            LocationService.bhubaneswarLatitude,
+            LocationService.bhubaneswarLongitude,
+          );
+
+    final result = await Navigator.push<MapLocationResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapLocationPickerScreen(
+          initialPosition: initialPos,
+          title: 'Select Lost Location',
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _latitude = result.latitude;
+        _longitude = result.longitude;
+        _locationController.text = result.address;
+      });
+    }
+  }
+
+  Future<void> _submitReport() async {
+    if (_selectedAssetId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select an item to report')),
+        const SnackBar(
+          content: Text('Please select an item'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }
@@ -71,359 +133,356 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
+    final provider = context.read<AssetProvider>();
 
     try {
       await provider.reportLostOrStolen(
         assetId: _selectedAssetId!,
-        reason: _selectedReason,
+        reason: 'Lost',
         locationAddress: _locationController.text.trim(),
-        notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+        coordinates: _latitude != null && _longitude != null
+            ? ll.LatLng(_latitude!, _longitude!)
+            : null,
+        notes: _notesController.text.trim().isNotEmpty
+            ? _notesController.text.trim()
+            : 'Reported lost on ${DateFormat('MMM d, h:mm a').format(_selectedDateTime)}',
       );
 
       if (mounted) {
-        final asset = provider.allAssets.firstWhere((a) => a.id == _selectedAssetId);
-        _showSuccessAndPromptTrace(asset);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Item marked as lost'),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to report: $e'), backgroundColor: const Color(0xFFEF4444)),
+          SnackBar(
+            content: Text('Report failed: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
   }
 
-  void _showSuccessAndPromptTrace(Asset asset) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'Report Submitted',
-              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${asset.name} has been marked as $_selectedReason.',
-              style: const TextStyle(fontSize: 13.5, color: Color(0xFF475569), height: 1.4),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Would you like to activate live GPS trace now to monitor location?',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              Navigator.pop(context);
-            },
-            child: const Text('Later', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              Navigator.pop(dialogCtx);
-              final provider = context.read<AssetProvider>();
-              await provider.activateTrace(asset.id);
-              if (mounted) {
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('ACTIVATE TRACE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AssetProvider>();
-    final assets = provider.allAssets;
+    return Consumer<AssetProvider>(
+      builder: (context, provider, child) {
+        final availableAssets = provider.myBelongings;
+        if (_selectedAssetId == null && availableAssets.isNotEmpty) {
+          _selectedAssetId = availableAssets.first.id;
+        }
 
-    final targetAsset = widget.initialAsset ??
-        (_selectedAssetId != null
-            ? assets.cast<Asset?>().firstWhere((a) => a?.id == _selectedAssetId, orElse: () => null)
-            : null);
-
-    final itemTitle = targetAsset != null ? targetAsset.name : 'Belonging';
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'REPORT ITEM',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.0,
+        return Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: const Text(
+              'Report Lost',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
+              ),
+            ),
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(1),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+            ),
           ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: const Color(0xFFE2E8F0), height: 1),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Clean header per spec: "Report Bike"
-                Text(
-                  'Report $itemTitle',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.black,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (targetAsset != null)
-                  Text(
-                    '${targetAsset.tracebackId} • ${targetAsset.brand} ${targetAsset.model}',
-                    style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                  )
-                else
-                  const Text(
-                    'Select the belonging you need to report.',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                  ),
-
-                if (widget.initialAsset == null) ...[
-                  const SizedBox(height: 18),
-                  DropdownButtonFormField<String>(
-                    value: _selectedAssetId,
-                    decoration: InputDecoration(
-                      hintText: 'Choose a registered belonging',
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    ),
-                    items: assets.map((a) {
-                      return DropdownMenuItem<String>(
-                        value: a.id,
-                        child: Text('${a.name} (${a.tracebackId})'),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedAssetId = val;
-                        final found = assets.firstWhere((a) => a.id == val);
-                        _locationController.text = found.address;
-                      });
-                    },
-                  ),
-                ],
-
-                const SizedBox(height: 28),
-
-                // Focused Radio Options: ○ Lost / ○ Stolen
-                Row(
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedReason = 'Lost'),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: _selectedReason == 'Lost' ? Colors.black : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: _selectedReason == 'Lost' ? Colors.black : const Color(0xFFE2E8F0),
-                              width: _selectedReason == 'Lost' ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _selectedReason == 'Lost' ? Icons.radio_button_checked : Icons.radio_button_off,
-                                color: _selectedReason == 'Lost' ? Colors.white : const Color(0xFF94A3B8),
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Lost',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: _selectedReason == 'Lost' ? Colors.white : Colors.black,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _selectedReason = 'Stolen'),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: _selectedReason == 'Stolen' ? const Color(0xFFEF4444) : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: _selectedReason == 'Stolen' ? const Color(0xFFEF4444) : const Color(0xFFE2E8F0),
-                              width: _selectedReason == 'Stolen' ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _selectedReason == 'Stolen' ? Icons.radio_button_checked : Icons.radio_button_off,
-                                color: _selectedReason == 'Stolen' ? Colors.white : const Color(0xFF94A3B8),
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Stolen',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w800,
-                                  color: _selectedReason == 'Stolen' ? Colors.white : Colors.black,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-
-                // Last known location
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
+                    // Item Selector
                     const Text(
-                      'LAST KNOWN LOCATION',
+                      'SELECT BELONGING *',
                       style: TextStyle(
-                        color: Color(0xFF475569),
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.8,
+                        color: Color(0xFF64748B),
                       ),
                     ),
-                    TextButton(
-                      onPressed: _isDetectingLocation ? null : _useCurrentLocation,
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                      child: Text(
-                        _isDetectingLocation ? 'Detecting...' : 'Use Current Location',
-                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.black),
+                    const SizedBox(height: 8),
+                    if (availableAssets.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: const Text('No registered items found. Please register an item first.'),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedAssetId,
+                            isExpanded: true,
+                            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.black),
+                            items: availableAssets.map((asset) {
+                              return DropdownMenuItem<String>(
+                                value: asset.id,
+                                child: Row(
+                                  children: [
+                                    Icon(asset.category.icon, size: 20, color: Colors.black),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        '${asset.name} (${asset.tracebackId})',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.black,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (newId) {
+                              if (newId != null) {
+                                setState(() {
+                                  _selectedAssetId = newId;
+                                  final chosen = availableAssets.firstWhere((a) => a.id == newId);
+                                  _locationController.text = chosen.address;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 20),
+
+                    // Last Known Location
+                    const Text(
+                      'LAST KNOWN LOCATION *',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _locationController,
+                      validator: (val) => val == null || val.trim().isEmpty ? 'Location is required' : null,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. Library 2nd Floor, Campus Canteen',
+                        hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                        prefixIcon: const Icon(Icons.place_outlined, size: 20, color: Color(0xFF64748B)),
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: _isDetectingLocation
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.my_location_rounded, size: 20, color: Colors.black),
+                              onPressed: _isDetectingLocation ? null : _detectLocation,
+                              tooltip: 'Use current GPS location',
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.map_rounded, size: 20, color: Color(0xFF0284C7)),
+                              onPressed: _pickOnMap,
+                              tooltip: 'Select on Google Map',
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _isDetectingLocation ? null : _detectLocation,
+                          icon: const Icon(Icons.my_location_rounded, size: 14),
+                          label: const Text('Use Current GPS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: _pickOnMap,
+                          icon: const Icon(Icons.map_rounded, size: 14),
+                          label: const Text('Select on Map', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF0284C7),
+                            side: const BorderSide(color: Color(0xFFBAE6FD)),
+                            backgroundColor: const Color(0xFFF0F9FF),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Date & Time Picker
+                    const Text(
+                      'DATE & TIME *',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: _pickDateTime,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_today_rounded, size: 18, color: Color(0xFF64748B)),
+                                const SizedBox(width: 10),
+                                Text(
+                                  DateFormat('EEEE, MMM d, yyyy · h:mm a').format(_selectedDateTime),
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Optional Note
+                    const Text(
+                      'OPTIONAL NOTE',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                      controller: _notesController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Any distinguishing marks, accessories, or context...',
+                        hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+
+                    // Submit Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _isSubmitting ? null : _submitReport,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEF4444),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              )
+                            : const Text(
+                                'Report as Lost',
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                              ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _locationController,
-                  decoration: InputDecoration(
-                    hintText: 'e.g. BGU Library, Cycle Stand',
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                  ),
-                  validator: (v) => v == null || v.trim().isEmpty ? 'Please enter last known location' : null,
-                ),
-                const SizedBox(height: 20),
-
-                // Additional note (optional)
-                const Text(
-                  'ADDITIONAL NOTE (OPTIONAL)',
-                  style: TextStyle(
-                    color: Color(0xFF475569),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _notesController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'Any details or circumstances to help security...',
-                    hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                // [ Report ] Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    onPressed: _isSubmitting ? null : () => _submitReport(provider),
-                    child: _isSubmitting
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(
-                            'Report $_selectedReason',
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                          ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

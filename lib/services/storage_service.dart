@@ -14,6 +14,7 @@ class StorageService {
   static const String _prefKeyAssetsJson = 'stored_assets_json';
   static const String _prefKeyIncidentsJson = 'stored_incidents_json';
   static const String _prefKeyReportsJson = 'stored_reports_json';
+  static const String _prefKeyNotificationsJson = 'stored_notifications_json';
   static const String _prefKeyUserProfileJson = 'stored_user_profile_json';
   static const String _prefKeyAdminConfigJson = 'stored_admin_config_json';
 
@@ -51,15 +52,15 @@ class StorageService {
       final jsonList = assets.map((a) => a.toJson()).toList();
       final jsonString = jsonEncode(jsonList);
 
-      // Save to SharedPreferences for bulletproof persistence
       final prefs = _prefs ?? await SharedPreferences.getInstance();
       _prefs = prefs;
-      await prefs.setString(_prefKeyAssetsJson, jsonString);
 
-      // Also save to Hive if available
-      if (_assetsJsonBox != null && _assetsJsonBox!.isOpen) {
-        await _assetsJsonBox!.put('all_assets', jsonString);
-      }
+      final prefsFuture = prefs.setString(_prefKeyAssetsJson, jsonString);
+      final hiveFuture = (_assetsJsonBox != null && _assetsJsonBox!.isOpen)
+          ? _assetsJsonBox!.put('all_assets', jsonString)
+          : Future<void>.value();
+
+      await Future.wait([prefsFuture, hiveFuture]);
     } catch (e) {
       debugPrint('StorageService saveAssets error: $e');
     }
@@ -92,11 +93,13 @@ class StorageService {
 
       final prefs = _prefs ?? await SharedPreferences.getInstance();
       _prefs = prefs;
-      await prefs.setString(_prefKeyIncidentsJson, jsonString);
 
-      if (_incidentsJsonBox != null && _incidentsJsonBox!.isOpen) {
-        await _incidentsJsonBox!.put('all_incidents', jsonString);
-      }
+      final prefsFuture = prefs.setString(_prefKeyIncidentsJson, jsonString);
+      final hiveFuture = (_incidentsJsonBox != null && _incidentsJsonBox!.isOpen)
+          ? _incidentsJsonBox!.put('all_incidents', jsonString)
+          : Future<void>.value();
+
+      await Future.wait([prefsFuture, hiveFuture]);
     } catch (e) {
       debugPrint('StorageService saveIncidents error: $e');
     }
@@ -144,6 +147,30 @@ class StorageService {
       }
     } catch (e) {
       debugPrint('StorageService loadReports error: $e');
+    }
+    return [];
+  }
+
+  Future<void> saveNotifications(List<Map<String, dynamic>> notifs) async {
+    try {
+      final jsonString = jsonEncode(notifs);
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs = prefs;
+      await prefs.setString(_prefKeyNotificationsJson, jsonString);
+    } catch (e) {
+      debugPrint('StorageService saveNotifications error: $e');
+    }
+  }
+
+  List<Map<String, dynamic>> loadNotifications() {
+    try {
+      final jsonString = _prefs?.getString(_prefKeyNotificationsJson);
+      if (jsonString != null && jsonString.isNotEmpty) {
+        final List<dynamic> decoded = jsonDecode(jsonString);
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (e) {
+      debugPrint('StorageService loadNotifications error: $e');
     }
     return [];
   }

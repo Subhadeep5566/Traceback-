@@ -32,33 +32,46 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     _loadedTabs.add(widget.initialTab);
   }
 
+  final Map<int, Widget> _screenCache = {};
+  bool? _lastIsAdmin;
+
   void _onTabSelected(int index) {
+    if (_currentIndex == index) return;
     setState(() {
       _currentIndex = index;
       _loadedTabs.add(index);
     });
   }
 
-  Widget _buildScreen(int index, bool isAdmin) {
+  Widget _getScreen(int index, bool isAdmin) {
+    if (_lastIsAdmin != isAdmin) {
+      _screenCache.remove(0);
+      _screenCache.remove(1);
+      _lastIsAdmin = isAdmin;
+    }
+
     if (!_loadedTabs.contains(index)) {
       return const SizedBox.shrink();
     }
-    switch (index) {
-      case 0:
-        return isAdmin
-            ? AdminDashboardScreen(onNavigateTab: _onTabSelected)
-            : DashboardScreen(onNavigateTab: _onTabSelected);
-      case 1:
-        return isAdmin ? const AdminCasesScreen() : const MyBelongingsScreen();
-      case 2:
-        return const GlobalMapScreen();
-      case 3:
-        return const FoundItemScreen();
-      case 4:
-        return const SettingsScreen();
-      default:
-        return const SizedBox.shrink();
-    }
+
+    return _screenCache.putIfAbsent(index, () {
+      switch (index) {
+        case 0:
+          return isAdmin
+              ? AdminDashboardScreen(onNavigateTab: _onTabSelected)
+              : DashboardScreen(onNavigateTab: _onTabSelected);
+        case 1:
+          return isAdmin ? const AdminCasesScreen() : const MyBelongingsScreen();
+        case 2:
+          return const GlobalMapScreen();
+        case 3:
+          return const FoundItemScreen();
+        case 4:
+          return const SettingsScreen();
+        default:
+          return const SizedBox.shrink();
+      }
+    });
   }
 
   @override
@@ -69,17 +82,17 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: List.generate(5, (idx) => _buildScreen(idx, isAdmin)),
+        children: List.generate(5, (idx) => _getScreen(idx, isAdmin)),
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
           border: const Border(
-            top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+            top: BorderSide(color: Color(0xFFF1F5F9), width: 1),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: Colors.black.withOpacity(0.03),
               blurRadius: 10,
               offset: const Offset(0, -2),
             ),
@@ -87,34 +100,34 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildNavItem(
                   index: 0,
-                  icon: isAdmin ? Icons.admin_panel_settings_rounded : Icons.home_rounded,
-                  label: isAdmin ? 'DASHBOARD' : 'HOME',
+                  icon: Icons.home_rounded,
+                  label: 'Home',
                 ),
                 _buildNavItem(
                   index: 1,
-                  icon: isAdmin ? Icons.folder_shared_rounded : Icons.inventory_2_rounded,
-                  label: isAdmin ? 'CASES' : 'BELONGINGS',
+                  icon: isAdmin ? Icons.assignment_rounded : Icons.inventory_2_rounded,
+                  label: isAdmin ? 'Cases' : 'Items',
                 ),
                 _buildNavItem(
                   index: 2,
-                  icon: Icons.radar_rounded,
-                  label: 'MAP',
+                  icon: Icons.map_rounded,
+                  label: 'Map',
                 ),
                 _buildNavItem(
                   index: 3,
-                  icon: Icons.qr_code_scanner_rounded,
-                  label: 'SCAN',
+                  icon: Icons.search_rounded,
+                  label: 'Search',
                 ),
                 _buildNavItem(
                   index: 4,
                   icon: Icons.person_rounded,
-                  label: 'PROFILE',
+                  label: 'Profile',
                 ),
               ],
             ),

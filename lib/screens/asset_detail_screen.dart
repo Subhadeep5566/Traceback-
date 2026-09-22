@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/asset.dart';
-import '../models/incident.dart';
-import '../models/user_profile.dart';
+import '../models/recovery_report.dart';
 import '../providers/asset_provider.dart';
-import '../services/auth_service.dart';
-import '../services/location_service.dart';
-import '../widgets/contact_card.dart';
-import '../widgets/tag_details_modal.dart';
-import 'live_trace_screen.dart';
-import 'report_item_screen.dart';
+import 'global_map_screen.dart';
+import 'qr_view_screen.dart';
+import 'register_belonging_screen.dart';
 
-class AssetDetailScreen extends StatelessWidget {
+class AssetDetailScreen extends StatefulWidget {
   final String assetId;
 
   const AssetDetailScreen({
@@ -21,143 +19,106 @@ class AssetDetailScreen extends StatelessWidget {
     required this.assetId,
   });
 
-  void _showHistorySheet(BuildContext context, List<Incident> incidents, Asset asset) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      backgroundColor: Colors.white,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+  @override
+  State<AssetDetailScreen> createState() => _AssetDetailScreenState();
+}
+
+class _AssetDetailScreenState extends State<AssetDetailScreen> {
+
+  Future<void> _contactFinder(Asset asset, AssetProvider provider) async {
+    final reports = provider.reportsForAsset(asset.id);
+    String? finderPhone;
+    String? finderName;
+    if (reports.isNotEmpty) {
+      final foundReport = reports.firstWhere(
+        (r) => r.reportType == ReportType.found,
+        orElse: () => reports.first,
+      );
+      finderPhone = foundReport.reporterContact;
+      finderName = foundReport.reporterName;
+    }
+
+    if (finderPhone != null && finderPhone.trim().isNotEmpty) {
+      final cleanPhone = finderPhone.replaceAll(RegExp(r'\D'), '');
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE2E8F0),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
+              Text('Contact Finder (${finderName ?? "Campus Finder"})', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Text('Contact: $finderPhone', style: const TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+              const SizedBox(height: 20),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'RECOVERY HISTORY',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: Color(0xFF64748B),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        launchUrl(Uri.parse('tel:$cleanPhone'));
+                      },
+                      icon: const Icon(Icons.call_rounded, size: 18),
+                      label: const Text('Call Finder', style: TextStyle(fontWeight: FontWeight.w800)),
                     ),
                   ),
-                  Text(
-                    asset.tracebackId,
-                    style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        launchUrl(Uri.parse('sms:$cleanPhone'));
+                      },
+                      icon: const Icon(Icons.message_rounded, size: 18),
+                      label: const Text('Message', style: TextStyle(fontWeight: FontWeight.w800)),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: _buildVerticalTimeline(incidents, asset),
-                ),
-              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showEditDialog(BuildContext context, AssetProvider provider, Asset asset) {
-    final nameCtrl = TextEditingController(text: asset.name);
-    final brandCtrl = TextEditingController(text: asset.brand);
-    final modelCtrl = TextEditingController(text: asset.model);
-    final colorCtrl = TextEditingController(text: asset.color);
-    final descCtrl = TextEditingController(text: asset.description);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Edit Belonging', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: 'Item Name'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: brandCtrl,
-                decoration: const InputDecoration(labelText: 'Brand'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: modelCtrl,
-                decoration: const InputDecoration(labelText: 'Model'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: colorCtrl,
-                decoration: const InputDecoration(labelText: 'Color'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: descCtrl,
-                decoration: const InputDecoration(labelText: 'Notes / Description'),
-              ),
-            ],
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            asset.finderNote?.isNotEmpty == true
+                ? 'Finder Note: "${asset.finderNote}"'
+                : 'Item was reported found at: ${asset.foundLocation ?? asset.address}',
           ),
+          behavior: SnackBarBehavior.floating,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              provider.updateAsset(asset.copyWith(
-                name: nameCtrl.text.trim(),
-                brand: brandCtrl.text.trim(),
-                model: modelCtrl.text.trim(),
-                color: colorCtrl.text.trim(),
-                description: descCtrl.text.trim(),
-              ));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Belonging details updated')),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+      );
+    }
   }
 
-  void _showDeleteDialog(BuildContext context, AssetProvider provider, Asset asset) {
+  void _confirmDelete(AssetProvider provider, Asset asset) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Unregister Belonging', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-        content: Text('Are you sure you want to remove "${asset.name}" (${asset.tracebackId}) from Traceback?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Delete Belonging?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        content: Text('Remove ${asset.name} from your inventory?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -167,14 +128,20 @@ class AssetDetailScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
+              elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            onPressed: () {
-              Navigator.pop(ctx); // Close dialog
-              Navigator.pop(context); // Go back from detail screen
-              provider.removeAsset(asset.id);
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await provider.deleteAsset(asset.id);
+              if (!mounted) return;
+              Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Belonging removed from personal inventory')),
+                SnackBar(
+                  content: Text('${asset.name} deleted'),
+                  backgroundColor: const Color(0xFFEF4444),
+                  behavior: SnackBarBehavior.floating,
+                ),
               );
             },
             child: const Text('Delete'),
@@ -184,32 +151,280 @@ class AssetDetailScreen extends StatelessWidget {
     );
   }
 
-  void _confirmRecoveryDialog(BuildContext context, AssetProvider provider, Asset asset) {
-    showDialog(
+  void _showRecoverySheet(BuildContext context, AssetProvider provider, Asset asset) {
+    showModalBottomSheet(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Confirm Recovery', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        content: Text('Confirm that you have physically retrieved "${asset.name}"? Active tracking will be terminated.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final foundTime = asset.foundAt != null
+            ? DateFormat('MMM d, y • h:mm a').format(asset.foundAt!)
+            : 'Recently';
+        final loc = asset.foundLocation ?? asset.address;
+        final note = asset.finderNote;
+
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Recover Belonging',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.place_rounded, color: Color(0xFFD97706), size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            loc.isNotEmpty ? loc : 'Campus Drop-off Point',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time_rounded, color: Color(0xFFB45309), size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          foundTime,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFFB45309)),
+                        ),
+                      ],
+                    ),
+                    if (note != null && note.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Note: "$note"',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontStyle: FontStyle.italic,
+                          color: Color(0xFF78350F),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Once you have physically retrieved and verified your belonging, confirm recovery below to update your inventory and resolve this case.',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await provider.confirmRecovery(asset.id);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                              const SizedBox(width: 8),
+                              Text('${asset.name} marked as recovered'),
+                            ],
+                          ),
+                          backgroundColor: const Color(0xFF10B981),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.check_circle_rounded, size: 18),
+                  label: const Text(
+                    'Mark as Recovered',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        );
+      },
+    );
+  }
+
+  Widget _buildTimeline(Asset asset) {
+    final dateFormat = DateFormat('MMM d, y • h:mm a');
+    final steps = <Map<String, dynamic>>[];
+
+    // 1. Registered (always)
+    steps.add({
+      'title': 'Registered',
+      'subtitle': 'Belonging tagged with ${asset.tracebackId}',
+      'time': dateFormat.format(asset.createdAt),
+      'color': const Color(0xFF10B981),
+      'icon': Icons.app_registration_rounded,
+    });
+
+    // 2. Reported Lost (if lost or has lostAt)
+    if (asset.isLost || asset.lostAt != null) {
+      final time = asset.lostAt != null ? dateFormat.format(asset.lostAt!) : 'Reported';
+      steps.add({
+        'title': 'Reported Lost',
+        'subtitle': 'Incident reported on campus',
+        'time': time,
+        'color': const Color(0xFFEF4444),
+        'icon': Icons.warning_amber_rounded,
+      });
+    }
+
+    // 3. Reported Found (if found or has foundAt)
+    if (asset.isFound || asset.foundAt != null) {
+      final time = asset.foundAt != null ? dateFormat.format(asset.foundAt!) : 'Located';
+      final loc = asset.foundLocation ?? asset.address;
+      steps.add({
+        'title': 'Found on Campus',
+        'subtitle': loc.isNotEmpty ? 'Located near $loc' : 'Secured on campus',
+        'time': time,
+        'color': const Color(0xFFF59E0B),
+        'icon': Icons.place_rounded,
+      });
+    }
+
+    // 4. Recovered & Verified (if recovered or has recoveredAt)
+    if (asset.isRecovered || asset.recoveredAt != null) {
+      final time = asset.recoveredAt != null ? dateFormat.format(asset.recoveredAt!) : 'Verified';
+      steps.add({
+        'title': 'Recovered & Verified',
+        'subtitle': 'Retrieved by owner with verified tag',
+        'time': time,
+        'color': const Color(0xFF0284C7),
+        'icon': Icons.verified_rounded,
+      });
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'LIFECYCLE TIMELINE',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+              color: Color(0xFF94A3B8),
             ),
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              provider.confirmRecovery(asset.id);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Item marked as Recovered! Trace terminated.')),
+          ),
+          const SizedBox(height: 16),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: steps.length,
+            separatorBuilder: (_, index) => const SizedBox(height: 16),
+            itemBuilder: (context, idx) {
+              final step = steps[idx];
+              final isLast = idx == steps.length - 1;
+              final color = step['color'] as Color;
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(step['icon'] as IconData, size: 16, color: color),
+                      ),
+                      if (!isLast)
+                        Container(
+                          width: 2,
+                          height: 28,
+                          color: const Color(0xFFE2E8F0),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              step['title'] as String,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.black,
+                              ),
+                            ),
+                            Text(
+                              step['time'] as String,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF94A3B8),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          step['subtitle'] as String,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               );
             },
-            child: const Text('Confirm Recovered', style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -220,35 +435,39 @@ class AssetDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AssetProvider>(
       builder: (context, provider, child) {
-        final Asset? asset = provider.allAssets.cast<Asset?>().firstWhere(
-              (a) => a?.id == assetId,
-              orElse: () => null,
-            );
+        final asset = provider.getAssetById(widget.assetId);
 
         if (asset == null) {
           return Scaffold(
-            backgroundColor: Colors.white,
-            appBar: AppBar(elevation: 0, backgroundColor: Colors.white),
-            body: const Center(
-              child: Text('This belonging could not be found.', style: TextStyle(fontWeight: FontWeight.w700)),
+            appBar: AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: const Text('Belonging Details'),
             ),
+            body: const Center(child: Text('Item not found')),
           );
         }
 
-        final incidents = provider.incidentsForAsset(asset.id);
-        final lastPingStr = LocationService.formatTimeAgo(asset.lastLocationUpdatedAt);
-
-        Color statusColor = const Color(0xFF10B981);
+        Color statusColor;
+        String statusText;
         if (asset.isLost) {
           statusColor = const Color(0xFFEF4444);
+          statusText = 'Lost';
         } else if (asset.isFound) {
           statusColor = const Color(0xFFF59E0B);
+          statusText = 'Found';
         } else if (asset.isRecovered) {
           statusColor = const Color(0xFF0284C7);
+          statusText = 'Recovered';
+        } else {
+          statusColor = const Color(0xFF10B981);
+          statusText = 'Safe';
         }
 
         return Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: const Color(0xFFF8FAFC),
           appBar: AppBar(
             backgroundColor: Colors.white,
             elevation: 0,
@@ -256,557 +475,646 @@ class AssetDetailScreen extends StatelessWidget {
               icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
               onPressed: () => Navigator.pop(context),
             ),
-            title: Text(
-              asset.name,
-              style: const TextStyle(
+            title: const Text(
+              'Item Details',
+              style: TextStyle(
                 color: Colors.black,
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: FontWeight.w900,
-                letterSpacing: -0.2,
+                letterSpacing: -0.3,
               ),
             ),
             actions: [
-              // Overflow Menu: Secondary Actions
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert_rounded, color: Colors.black, size: 22),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                onSelected: (val) {
-                  if (val == 'tag') {
-                    TagDetailsModal.show(context, asset);
-                  } else if (val == 'history') {
-                    _showHistorySheet(context, incidents, asset);
-                  } else if (val == 'desk') {
-                    final auth = context.read<AuthService>();
-                    final admin = auth.storageService.loadAdminConfig();
-                    ContactCard.showAdminSheet(
-                      context: context,
-                      adminName: admin.name,
-                      office: admin.office,
-                      designation: admin.designation,
-                      email: admin.email,
-                      phone: admin.phone,
-                      officeLocation: admin.officeLocation,
-                    );
-                  } else if (val == 'report_lost') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ReportItemScreen(initialAsset: asset, initialReason: 'Lost')),
-                    );
-                  } else if (val == 'report_stolen') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ReportItemScreen(initialAsset: asset, initialReason: 'Stolen')),
-                    );
-                  } else if (val == 'report_found') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ReportItemScreen(initialAsset: asset, initialReason: 'Found')),
-                    );
-                  } else if (val == 'edit') {
-                    _showEditDialog(context, provider, asset);
-                  } else if (val == 'delete') {
-                    _showDeleteDialog(context, provider, asset);
-                  }
+              IconButton(
+                icon: const Icon(Icons.qr_code_rounded, color: Colors.black, size: 22),
+                tooltip: 'View QR Tag',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => QrViewScreen(asset: asset)),
+                  );
                 },
-                itemBuilder: (ctx) => [
-                  const PopupMenuItem(
-                    value: 'tag',
-                    child: Row(
-                      children: [
-                        Icon(Icons.qr_code_2_rounded, size: 18, color: Colors.black),
-                        SizedBox(width: 10),
-                        Text('View Tag QR', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'history',
-                    child: Row(
-                      children: [
-                        Icon(Icons.history_rounded, size: 18, color: Colors.black),
-                        SizedBox(width: 10),
-                        Text('Recovery History', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'desk',
-                    child: Row(
-                      children: [
-                        Icon(Icons.support_agent_rounded, size: 18, color: Colors.black),
-                        SizedBox(width: 10),
-                        Text('Contact Recovery Desk', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  if (!asset.isLost)
-                    const PopupMenuItem(
-                      value: 'report_lost',
-                      child: Row(
-                        children: [
-                          Icon(Icons.search_rounded, size: 18, color: Color(0xFFD97706)),
-                          SizedBox(width: 10),
-                          Text('Report Lost', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFD97706))),
-                        ],
-                      ),
-                    ),
-                  if (!asset.isLost)
-                    const PopupMenuItem(
-                      value: 'report_stolen',
-                      child: Row(
-                        children: [
-                          Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFE11D48)),
-                          SizedBox(width: 10),
-                          Text('Report Stolen', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFE11D48))),
-                        ],
-                      ),
-                    ),
-                  if (asset.isLost)
-                    const PopupMenuItem(
-                      value: 'report_found',
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle_outline_rounded, size: 18, color: Color(0xFF10B981)),
-                          SizedBox(width: 10),
-                          Text('Report Found', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF10B981))),
-                        ],
-                      ),
-                    ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_outlined, size: 18, color: Colors.black),
-                        SizedBox(width: 10),
-                        Text('Edit Belonging', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
-                        SizedBox(width: 10),
-                        Text('Delete Item', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
-                      ],
-                    ),
-                  ),
-                ],
               ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, color: Colors.black, size: 20),
+                tooltip: 'Edit',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RegisterBelongingScreen(editingAsset: asset),
+                    ),
+                  );
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 22),
+                tooltip: 'Delete',
+                onPressed: () => _confirmDelete(provider, asset),
+              ),
+              const SizedBox(width: 4),
             ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(1),
-              child: Container(color: const Color(0xFFE2E8F0), height: 1),
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(1),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
             ),
           ),
           body: SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ITEM IDENTITY
-                  Text(
-                    asset.name,
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.black,
-                      letterSpacing: -0.4,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // STATUS DOT
-                  Row(
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: statusColor,
-                        ),
+                  // Found Banner (If Found)
+                  if (asset.isFound) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFFCD34D)),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        asset.status.displayName.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
-                          color: statusColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-
-                  // TRACEBACK ID (Tap to copy)
-                  InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: asset.tracebackId));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${asset.tracebackId} copied to clipboard'),
-                          duration: const Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(4),
-                    child: Text(
-                      asset.tracebackId,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF64748B),
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  const Divider(color: Color(0xFFE2E8F0), height: 1),
-                  const SizedBox(height: 20),
-
-                  // LAST KNOWN LOCATION
-                  const Text(
-                    'Last known location',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    asset.address,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Updated $lastPingStr',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  const Divider(color: Color(0xFFE2E8F0), height: 1),
-                  const SizedBox(height: 20),
-
-                  // TRACKING STATUS
-                  const Text(
-                    'Tracking',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: asset.trackingEnabled ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        asset.trackingEnabled ? 'Live' : 'Inactive',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: asset.trackingEnabled ? const Color(0xFF10B981) : const Color(0xFF64748B),
-                        ),
-                      ),
-                      if (asset.trackingEnabled) ...[
-                        const SizedBox(width: 8),
-                        Text(
-                          '·  ±${asset.locationAccuracy.toStringAsFixed(0)}m accuracy',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 36),
-
-                  // ONE PRIMARY ACTION
-                  _buildPrimaryActionButton(context, provider, asset),
-                  const SizedBox(height: 16),
-
-                  // History Quick Trigger
-                  Center(
-                    child: TextButton.icon(
-                      onPressed: () => _showHistorySheet(context, incidents, asset),
-                      icon: const Icon(Icons.history_rounded, size: 16, color: Color(0xFF64748B)),
-                      label: const Text(
-                        'View History & Timeline',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPrimaryActionButton(BuildContext context, AssetProvider provider, Asset asset) {
-    if (asset.trackingEnabled) {
-      return SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => LiveTraceScreen(assetId: asset.id)),
-            );
-          },
-          icon: const Icon(Icons.radar_rounded, size: 18),
-          label: const Text('View Live Location', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-        ),
-      );
-    }
-
-    if (asset.isLost) {
-      return SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () async {
-            await provider.activateTrace(asset.id);
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Live trace activated!')),
-              );
-            }
-          },
-          icon: const Icon(Icons.radar_rounded, size: 18),
-          label: const Text('Activate Live Trace', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-        ),
-      );
-    }
-
-    if (asset.isFound) {
-      return SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF10B981),
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () => _confirmRecoveryDialog(context, provider, asset),
-          icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
-          label: const Text('Confirm Recovery', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-        ),
-      );
-    }
-
-    if (asset.isRecovered) {
-      return SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          onPressed: () {
-            provider.markAsSafe(asset.id);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Item marked as Secure in personal inventory')),
-            );
-          },
-          icon: const Icon(Icons.shield_rounded, size: 18),
-          label: const Text('Mark Secure', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-        ),
-      );
-    }
-
-    // Default Safe: Report Lost
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Color(0xFFCBD5E1)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          foregroundColor: Colors.black,
-        ),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ReportItemScreen(initialAsset: asset, initialReason: 'Lost'),
-            ),
-          );
-        },
-        icon: const Icon(Icons.search_rounded, size: 18),
-        label: const Text('Report Lost or Missing', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-      ),
-    );
-  }
-
-  static Widget _buildVerticalTimeline(List<Incident> incidents, Asset asset) {
-    final allSteps = <IncidentTimelineStep>[];
-    for (final inc in incidents) {
-      allSteps.addAll(inc.timeline);
-    }
-    allSteps.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-    if (allSteps.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        alignment: Alignment.center,
-        child: const Text('No history recorded yet.', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-      );
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: allSteps.length,
-      itemBuilder: (context, index) {
-        final step = allSteps[index];
-        final isLast = index == allSteps.length - 1;
-        final dateStr = DateFormat('dd MMM, hh:mm a').format(step.timestamp);
-
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
-                children: [
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: index == 0 ? Colors.black : const Color(0xFFE2E8F0),
-                      border: Border.all(
-                        color: index == 0 ? Colors.black : const Color(0xFF94A3B8),
-                        width: 2,
-                      ),
-                    ),
-                    child: index == 0
-                        ? const Center(
-                            child: Icon(Icons.check, size: 8, color: Colors.white),
-                          )
-                        : null,
-                  ),
-                  if (!isLast)
-                    Expanded(
-                      child: Container(
-                        width: 2,
-                        color: const Color(0xFFE2E8F0),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Row(
                         children: [
-                          Text(
-                            step.title,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.black,
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFDE68A),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.place_rounded, color: Color(0xFFB45309), size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Item Found by Campus Peer',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  asset.foundLocation != null
+                                      ? 'Secured near ${asset.foundLocation}'
+                                      : 'Reported found and awaiting retrieval',
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFFB45309)),
+                                ),
+                              ],
                             ),
                           ),
-                          Text(
-                            dateStr,
-                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFD97706),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            onPressed: () => _showRecoverySheet(context, provider, asset),
+                            child: const Text('Recover', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
                           ),
                         ],
                       ),
-                      if (step.description.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          step.description,
-                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), height: 1.3),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Main Item Header Card
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: asset.isLost ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0),
+                        width: asset.isLost ? 1.5 : 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
                         ),
                       ],
-                      if (step.actor != null || step.actorRole == UserRole.admin) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: (step.actorRole == UserRole.admin) ? const Color(0xFFECFDF5) : const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Column(
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Icon(asset.category.icon, size: 32, color: Colors.black),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          asset.name,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.4,
+                            color: Colors.black,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        if (asset.brand.isNotEmpty || asset.model.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '${asset.brand} ${asset.model}'.trim(),
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+
+                        // Status Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(shape: BoxShape.circle, color: statusColor),
                               ),
-                              child: Text(
-                                (step.actorRole == UserRole.admin)
-                                    ? 'BY COLLEGE ADMIN (${step.actor ?? "Staff"})'
-                                    : 'BY STUDENT (${step.actor ?? "Owner"})',
+                              const SizedBox(width: 8),
+                              Text(
+                                statusText.toUpperCase(),
                                 style: TextStyle(
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.3,
-                                  color: (step.actorRole == UserRole.admin) ? const Color(0xFF047857) : const Color(0xFF1D4ED8),
+                                  color: statusColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Traceback ID Card with Copy & QR modal launcher
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'TRACEBACK ID',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.8,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  asset.tracebackId,
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.copy_rounded, size: 18, color: Color(0xFF64748B)),
+                                  tooltip: 'Copy ID',
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: asset.tracebackId));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Traceback ID copied to clipboard'),
+                                        behavior: SnackBarBehavior.floating,
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.qr_code_2_rounded,
+                                    size: 20,
+                                    color: Colors.black,
+                                  ),
+                                  tooltip: 'View QR Tag',
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => QrViewScreen(asset: asset)),
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Location Section with Mini Map & Tap to Open Full Map
+                  Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'LOCATION',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.8,
+                                      color: Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => GlobalMapScreen(initialAssetId: asset.id),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text(
+                                      'Open Map →',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF0284C7),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  const Icon(Icons.place_rounded, size: 16, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      asset.address.isNotEmpty
+                                          ? asset.address
+                                          : 'BGU Campus, Bhubaneswar',
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.black,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        _MiniMapPreview(asset: asset, statusColor: statusColor),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Real Item Lifecycle Timeline
+                  _buildTimeline(asset),
+                  const SizedBox(height: 24),
+
+                  // Contextual Primary and Secondary Action Buttons
+                  if (asset.isFound) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () => _showRecoverySheet(context, provider, asset),
+                        icon: const Icon(Icons.check_circle_rounded, size: 18),
+                        label: const Text(
+                          'Mark as Recovered',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () => _contactFinder(asset, provider),
+                        icon: const Icon(Icons.person_pin_circle_rounded, size: 18),
+                        label: const Text(
+                          'Contact Finder',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GlobalMapScreen(initialAssetId: asset.id),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.map_rounded, size: 18),
+                        label: const Text(
+                          'View on Map',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ] else if (asset.isLost) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0284C7),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GlobalMapScreen(initialAssetId: asset.id),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.map_rounded, size: 18),
+                        label: const Text(
+                          'View on Map',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => QrViewScreen(asset: asset)),
+                          );
+                        },
+                        icon: const Icon(Icons.qr_code_rounded, size: 18),
+                        label: const Text(
+                          'View QR Tag',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ] else if (asset.isRecovered) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () async {
+                          await provider.markAsSafe(asset.id);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${asset.name} re-secured into inventory'),
+                                backgroundColor: const Color(0xFF10B981),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.shield_rounded, size: 18),
+                        label: const Text(
+                          'Re-secure Belonging',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => QrViewScreen(asset: asset)),
+                          );
+                        },
+                        icon: const Icon(Icons.qr_code_rounded, size: 18),
+                        label: const Text(
+                          'View QR Tag',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    // Registered / Safe
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEF4444),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        onPressed: () async {
+                          await provider.markAsLost(asset.id);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${asset.name} marked as lost'),
+                                backgroundColor: const Color(0xFFEF4444),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                        label: const Text(
+                          'Report Lost',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          foregroundColor: Colors.black,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => QrViewScreen(asset: asset)),
+                          );
+                        },
+                        icon: const Icon(Icons.qr_code_rounded, size: 18),
+                        label: const Text(
+                          'View QR Tag',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MiniMapPreview extends StatelessWidget {
+  final Asset asset;
+  final Color statusColor;
+
+  const _MiniMapPreview({
+    required this.asset,
+    required this.statusColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 140,
+      width: double.infinity,
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: asset.latLng,
+          initialZoom: 15.0,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.none,
+          ),
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.traceback.app',
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: asset.latLng,
+                width: 36,
+                height: 36,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 6,
+                      ),
                     ],
                   ),
+                  child: const Icon(Icons.place, color: Colors.white, size: 20),
                 ),
               ),
             ],
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

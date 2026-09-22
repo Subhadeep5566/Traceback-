@@ -1,11 +1,15 @@
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/asset.dart';
+import '../models/found_item.dart';
 import '../models/incident.dart';
 import '../models/recovery_report.dart';
 import '../models/user_profile.dart';
 import '../services/demo_data_service.dart';
+import '../services/firestore_service.dart';
 import '../services/location_service.dart';
+import '../services/matching_service.dart';
 import '../services/storage_service.dart';
 import '../services/telematics_service.dart';
 
@@ -45,13 +49,48 @@ class AppActivityNotification {
       targetRole: targetRole,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'subtitle': subtitle,
+    'assetId': assetId,
+    'tracebackId': tracebackId,
+    'timestamp': timestamp.toIso8601String(),
+    'isRead': isRead,
+    'type': type,
+    if (targetRole != null) 'targetRole': targetRole!.name,
+  };
+
+  factory AppActivityNotification.fromJson(Map<String, dynamic> json) {
+    return AppActivityNotification(
+      id: json['id'] as String? ?? 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+      title: json['title'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      assetId: json['assetId'] as String? ?? '',
+      tracebackId: json['tracebackId'] as String? ?? '',
+      timestamp: json['timestamp'] != null
+          ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      isRead: json['isRead'] as bool? ?? false,
+      type: json['type'] as String? ?? 'info',
+      targetRole: json['targetRole'] != null
+          ? UserRole.values.cast<UserRole?>().firstWhere(
+              (r) => r?.name == json['targetRole'],
+              orElse: () => null,
+            )
+          : null,
+    );
+  }
 }
 
 class AssetProvider extends ChangeNotifier {
   final TelematicsService _telematicsService = TelematicsService();
   final StorageService _storageService;
+  final FirestoreService _firestoreService;
 
   List<Asset> _assets = [];
+  final List<FoundItem> _foundItems = [];
   List<Incident> _incidents = [];
   List<RecoveryReport> _reports = [];
   List<AppActivityNotification> _notifications = [];
@@ -62,8 +101,9 @@ class AssetProvider extends ChangeNotifier {
   bool _isDemoMode = false;
   String _currentOwnerId = 'student_current';
 
-  AssetProvider([StorageService? storageService])
-      : _storageService = storageService ?? StorageService() {
+  AssetProvider([StorageService? storageService, FirestoreService? firestoreService])
+      : _storageService = storageService ?? StorageService(),
+        _firestoreService = firestoreService ?? FirestoreService() {
     _initData();
   }
 
@@ -71,12 +111,17 @@ class AssetProvider extends ChangeNotifier {
     try {
       await _storageService.init();
       _loadFromStorage();
+      final bool hadSavedData = _assets.isNotEmpty;
       if (_assets.isEmpty) {
         _assets = _telematicsService.getInitialAssets();
         _incidents = _telematicsService.getInitialIncidents();
+      }
+      if (_notifications.isEmpty) {
+        _initInitialNotifications();
+      }
+      if (!hadSavedData) {
         await _persistAll();
       }
-      _initInitialNotifications();
       if (_assets.isNotEmpty) {
         _selectedAssetId = _assets.first.id;
       }
@@ -118,7 +163,26 @@ class AssetProvider extends ChangeNotifier {
 
   void setOwner(String ownerId) {
     _currentOwnerId = ownerId;
+    if (!_isDemoMode) {
+      _syncWithFirestore(ownerId);
+    }
     notifyListeners();
+  }
+
+  Future<void> _syncWithFirestore(String ownerId) async {
+    try {
+      final remoteBelongings = await _firestoreService.getUserBelongings(ownerId);
+      if (remoteBelongings.isNotEmpty) {
+        _assets = remoteBelongings;
+        if (_selectedAssetId == null || !_assets.any((a) => a.id == _selectedAssetId)) {
+          _selectedAssetId = _assets.first.id;
+        }
+        _persistAssetsAsync();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error syncing belongings with Firestore: $e');
+    }
   }
 
   bool get isInitialized => _isInitialized;
@@ -152,13 +216,31 @@ class AssetProvider extends ChangeNotifier {
     _assets = _storageService.loadAssets();
     _incidents = _storageService.loadIncidents();
     _reports = _storageService.loadReports();
+    final savedNotifs = _storageService.loadNotifications();
+    if (savedNotifs.isNotEmpty) {
+      _notifications = savedNotifs.map((m) => AppActivityNotification.fromJson(m)).toList();
+    }
   }
 
   Future<void> _persistAll() async {
     if (_isDemoMode) return;
-    await _storageService.saveAssets(_assets);
-    await _storageService.saveIncidents(_incidents);
-    await _storageService.saveReports(_reports);
+    await Future.wait([
+      _storageService.saveAssets(_assets),
+      _storageService.saveIncidents(_incidents),
+      _storageService.saveReports(_reports),
+      _storageService.saveNotifications(_notifications.map((n) => n.toJson()).toList()),
+    ]);
+  }
+
+  void _persistNotificationsAsync() {
+    if (_isDemoMode) return;
+    final jsonList = _notifications.map((n) => n.toJson()).toList();
+    _storageService.saveNotifications(jsonList);
+  }
+
+  void _persistAssetsAsync() {
+    if (_isDemoMode) return;
+    _storageService.saveAssets(_assets);
   }
 
   // Getters
@@ -258,24 +340,23 @@ class AssetProvider extends ChangeNotifier {
     return incs.isNotEmpty ? incs.first : null;
   }
 
-  // Traceback ID Generator
-  String generateUniqueTracebackId(AssetCategory category) {
-    final prefix = 'TB-${category.idPrefix}';
-    int maxSeq = 0;
-
-    for (final a in _assets) {
-      if (a.tracebackId.startsWith(prefix)) {
-        final parts = a.tracebackId.split('-');
-        if (parts.length >= 3) {
-          final numPart = int.tryParse(parts.last) ?? 0;
-          if (numPart > maxSeq) maxSeq = numPart;
-        }
-      }
-    }
-
-    final nextSeq = (maxSeq + 1).toString().padLeft(3, '0');
-    return '$prefix-$nextSeq';
+  // Traceback ID Generator (Format: TB-8F42A1, short, non-repetitive, unique)
+  String generateUniqueTracebackId([AssetCategory? category]) {
+    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+    final random = math.Random();
+    String newId;
+    int attempts = 0;
+    do {
+      final code = String.fromCharCodes(
+        Iterable.generate(6, (_) => chars.codeUnitAt(random.nextInt(chars.length))),
+      );
+      newId = 'TB-$code';
+      attempts++;
+    } while (_assets.any((a) => a.tracebackId.toUpperCase() == newId.toUpperCase()) && attempts < 100);
+    return newId;
   }
+
+  List<FoundItem> get allFoundItems => _foundItems;
 
   // Register Belonging Flow
   Future<Asset> registerBelonging({
@@ -285,6 +366,9 @@ class AssetProvider extends ChangeNotifier {
     String model = '',
     String color = '',
     String description = '',
+    String? serialNumber,
+    String? registrationNumber,
+    String? photoUrl,
     String? customTracebackId,
     String? address,
     LatLng? location,
@@ -298,7 +382,7 @@ class AssetProvider extends ChangeNotifier {
     final targetLatLng = location ?? LocationService.bguCampusCenter;
     final itemAddress = address?.isNotEmpty == true
         ? address!
-        : 'Birla Global University, Gothapatna, Bhubaneswar';
+        : 'Bhubaneswar, Odisha, India';
 
     final newAsset = Asset(
       id: uniqueId,
@@ -310,6 +394,9 @@ class AssetProvider extends ChangeNotifier {
       model: model.trim(),
       color: color.trim(),
       description: description.trim(),
+      serialNumber: serialNumber?.trim() ?? '',
+      registrationNumber: registrationNumber?.trim() ?? '',
+      photoUrl: photoUrl,
       status: AssetStatus.safe,
       trackingEnabled: false,
       createdAt: now,
@@ -369,9 +456,119 @@ class AssetProvider extends ChangeNotifier {
       ),
     );
 
+    if (!_isDemoMode) {
+      _firestoreService.saveBelonging(newAsset);
+      _firestoreService.saveIncident(initialIncident);
+      _firestoreService.sendNotification({
+        'id': 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+        'title': 'New Belonging Registered',
+        'subtitle': '${newAsset.name} was tagged with ID $tracebackId.',
+        'assetId': newAsset.id,
+        'tracebackId': tracebackId,
+        'timestamp': now.toIso8601String(),
+        'type': 'recovered',
+        'targetUserId': _currentOwnerId,
+      });
+    }
+
     await _persistAll();
     notifyListeners();
     return newAsset;
+  }
+
+  // Report General Found Item (Finder flow)
+  Future<FoundItem> reportFoundItem({
+    required String finderId,
+    required String finderName,
+    String finderContact = '',
+    required String itemName,
+    required String category,
+    String? brand,
+    String? model,
+    String? color,
+    String? description,
+    String? serialNumber,
+    String? registrationNumber,
+    String? photoUrl,
+    required String foundLocation,
+    double? latitude,
+    double? longitude,
+    DateTime? foundAt,
+  }) async {
+    final now = DateTime.now();
+    final uniqueId = 'FOUND-${now.millisecondsSinceEpoch.toString().substring(5)}';
+
+    var item = FoundItem(
+      foundItemId: uniqueId,
+      finderId: finderId,
+      finderName: finderName,
+      finderContact: finderContact,
+      itemName: itemName.trim(),
+      category: category.trim().toLowerCase(),
+      brand: brand?.trim(),
+      model: model?.trim(),
+      color: color?.trim(),
+      description: description?.trim(),
+      serialNumber: serialNumber?.trim(),
+      registrationNumber: registrationNumber?.trim(),
+      photoUrl: photoUrl,
+      foundLocation: foundLocation.trim(),
+      latitude: latitude,
+      longitude: longitude,
+      foundAt: foundAt ?? now,
+      status: FoundItemStatus.reported,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    // Run matching engine against all assets
+    final matches = MatchingService.findPossibleMatches(item, _assets);
+    if (matches.isNotEmpty) {
+      final bestMatch = matches.first;
+      item = item.copyWith(
+        status: FoundItemStatus.matched,
+        matchedItemId: bestMatch.matchedAsset.id,
+        matchedOwnerId: bestMatch.matchedAsset.ownerId,
+      );
+
+      // Notify owner of potential match
+      _notifications.insert(
+        0,
+        AppActivityNotification(
+          id: 'NOTIF-MATCH-${now.millisecondsSinceEpoch}',
+          title: 'Possible Match Found!',
+          subtitle: 'A found ${item.itemName} (${item.foundLocation}) matches your ${bestMatch.matchedAsset.name} (${bestMatch.percentage}% match).',
+          assetId: bestMatch.matchedAsset.id,
+          tracebackId: bestMatch.matchedAsset.tracebackId,
+          timestamp: now,
+          type: 'found',
+        ),
+      );
+    }
+
+    _foundItems.insert(0, item);
+
+    if (!_isDemoMode) {
+      await _firestoreService.saveFoundItem(item);
+    }
+
+    notifyListeners();
+    return item;
+  }
+
+  List<MatchScore> getPossibleMatchesForFoundItem(FoundItem foundItem) {
+    return MatchingService.findPossibleMatches(foundItem, _assets);
+  }
+
+  List<FoundItem> getPossibleFoundMatchesForAsset(Asset asset) {
+    final results = <FoundItem>[];
+    for (final foundItem in _foundItems) {
+      final match = MatchingService.evaluateMatch(foundItem: foundItem, asset: asset);
+      if (match.score >= 40.0 || match.isStrongMatch) {
+        results.add(foundItem);
+      }
+    }
+    return results;
   }
 
   // Generic & Role-Aware Reporting Flow
@@ -424,6 +621,11 @@ class AssetProvider extends ChangeNotifier {
       latitude: lat,
       longitude: lng,
       updatedAt: now,
+      lostAt: (reportType != ReportType.found) ? (target.lostAt ?? now) : target.lostAt,
+      foundAt: (reportType == ReportType.found) ? now : target.foundAt,
+      foundLocation: (reportType == ReportType.found) ? (location.isNotEmpty ? location : target.address) : target.foundLocation,
+      finderNote: (reportType == ReportType.found) ? description : target.finderNote,
+      finderPhoto: (reportType == ReportType.found && image != null) ? image : target.finderPhoto,
     );
 
     // Create / Update timeline step
@@ -524,6 +726,38 @@ class AssetProvider extends ChangeNotifier {
     }
 
     _selectedAssetId = target.id;
+
+    if (!_isDemoMode) {
+      _firestoreService.saveFoundReport(report);
+      _firestoreService.updateBelongingStatus(
+        target.id,
+        newStatus,
+        foundLocation: location.isNotEmpty ? location : target.address,
+        finderNote: description,
+        finderPhoto: image,
+      );
+      if (updatedIncident) {
+        for (final inc in _incidents) {
+          if (inc.assetId == target.id) {
+            _firestoreService.saveIncident(inc);
+            break;
+          }
+        }
+      } else {
+        _firestoreService.saveIncident(_incidents.first);
+      }
+      _firestoreService.sendNotification({
+        'id': 'NOTIF-${DateTime.now().millisecondsSinceEpoch}',
+        'title': reportType == ReportType.found ? 'Your Belonging Was Found!' : 'New Report Filed',
+        'subtitle': '${target.name} (${target.tracebackId}) reported ${reportType.displayName}.',
+        'assetId': target.id,
+        'tracebackId': target.tracebackId,
+        'timestamp': now.toIso8601String(),
+        'type': reportType == ReportType.found ? 'found' : 'lost',
+        'targetUserId': target.ownerId,
+      });
+    }
+
     await _persistAll();
     notifyListeners();
     return report;
@@ -842,8 +1076,10 @@ class AssetProvider extends ChangeNotifier {
   }
 
   // Owner Confirms Recovery Flow
-  Future<void> confirmRecovery(String assetId) async {
-    final index = _assets.indexWhere((a) => a.id == assetId);
+  Future<void> confirmRecovery(String assetId, {String? foundItemId}) async {
+    final index = _assets.indexWhere(
+      (a) => a.id == assetId || a.tracebackId.toUpperCase() == assetId.toUpperCase(),
+    );
     if (index == -1) return;
 
     final target = _assets[index];
@@ -854,10 +1090,26 @@ class AssetProvider extends ChangeNotifier {
       status: AssetStatus.recovered,
       trackingEnabled: false,
       updatedAt: now,
+      recoveredAt: now,
     );
 
+    // If a found item is linked or passed, update its status to returned
+    final targetFoundId = foundItemId ?? target.matchedFoundItemId;
+    if (targetFoundId != null) {
+      final fIndex = _foundItems.indexWhere((f) => f.foundItemId == targetFoundId);
+      if (fIndex != -1) {
+        _foundItems[fIndex] = _foundItems[fIndex].copyWith(
+          status: FoundItemStatus.returned,
+          updatedAt: now,
+        );
+      }
+      if (!_isDemoMode) {
+        await _firestoreService.updateFoundItemStatus(targetFoundId, FoundItemStatus.returned);
+      }
+    }
+
     for (int i = 0; i < _incidents.length; i++) {
-      if (_incidents[i].assetId == assetId && _incidents[i].status != 'Recovered') {
+      if (_incidents[i].assetId == target.id && _incidents[i].status != 'Recovered') {
         final updatedTimeline = List<IncidentTimelineStep>.from(_incidents[i].timeline)
           ..add(IncidentTimelineStep(
             title: 'Recovered & Verified',
@@ -885,17 +1137,21 @@ class AssetProvider extends ChangeNotifier {
       ),
     );
 
+    if (!_isDemoMode) {
+      _firestoreService.updateBelongingStatus(target.id, AssetStatus.recovered);
+    }
+
     await _persistAll();
     notifyListeners();
   }
 
   // Compatibility alias for markAsRecovered
-  void markAsRecovered(String assetId) {
-    confirmRecovery(assetId);
+  void markAsRecovered(String assetId, {String? foundItemId}) {
+    confirmRecovery(assetId, foundItemId: foundItemId);
   }
 
-  void recordRecovery(String assetId, {String? note}) {
-    confirmRecovery(assetId);
+  void recordRecovery(String assetId, {String? note, String? foundItemId}) {
+    confirmRecovery(assetId, foundItemId: foundItemId);
   }
 
   // Mark/Re-secure Belonging
@@ -928,6 +1184,10 @@ class AssetProvider extends ChangeNotifier {
       }
     }
 
+    if (!_isDemoMode) {
+      _firestoreService.updateBelongingStatus(target.id, AssetStatus.safe);
+    }
+
     await _persistAll();
     notifyListeners();
   }
@@ -947,12 +1207,29 @@ class AssetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  int get unreadNotificationCount => _notifications.where((n) => !n.isRead).length;
+
   void markNotificationRead(String id) {
     final index = _notifications.indexWhere((n) => n.id == id);
     if (index != -1) {
       _notifications[index] = _notifications[index].copyWith(isRead: true);
+      _persistNotificationsAsync();
       notifyListeners();
     }
+  }
+
+  void markNotificationAsRead(String id) => markNotificationRead(id);
+
+  void markAllNotificationsAsRead() {
+    _notifications = _notifications.map((n) => n.copyWith(isRead: true)).toList();
+    _persistNotificationsAsync();
+    notifyListeners();
+  }
+
+  void clearNotifications() {
+    _notifications.clear();
+    _persistNotificationsAsync();
+    notifyListeners();
   }
 
   Future<void> addAsset(Asset asset) async {
@@ -965,7 +1242,10 @@ class AssetProvider extends ChangeNotifier {
     final index = _assets.indexWhere((a) => a.id == asset.id);
     if (index != -1) {
       _assets[index] = asset;
-      await _persistAll();
+      _persistAssetsAsync();
+      if (!_isDemoMode) {
+        _firestoreService.saveBelonging(asset);
+      }
       notifyListeners();
     }
   }
@@ -973,8 +1253,75 @@ class AssetProvider extends ChangeNotifier {
   Future<void> removeAsset(String assetId) async {
     _assets.removeWhere((a) => a.id == assetId);
     _incidents.removeWhere((i) => i.assetId == assetId);
+    if (!_isDemoMode) {
+      _firestoreService.deleteBelonging(assetId);
+    }
     await _persistAll();
     notifyListeners();
+  }
+
+  Future<void> deleteAsset(String assetId) async {
+    await removeAsset(assetId);
+  }
+
+  Future<void> markAsLost(
+    String assetId, {
+    String? location,
+    String? note,
+    DateTime? dateTime,
+  }) async {
+    await reportLostOrStolen(
+      assetId: assetId,
+      reason: 'Lost',
+      locationAddress: location,
+      notes: note,
+    );
+  }
+
+  Asset? lookupByTracebackId(String rawQuery) {
+    String clean = rawQuery.trim().toUpperCase();
+    if (clean.isEmpty) return null;
+
+    // Handle deep links or paths like https://traceback.app/item/TB-8F42A1
+    if (clean.contains('/')) {
+      clean = clean.split('/').last.trim();
+    }
+    if (clean.contains('=')) {
+      clean = clean.split('=').last.trim();
+    }
+    if (clean.contains(':')) {
+      clean = clean.split(':').last.trim();
+    }
+
+    try {
+      return _assets.firstWhere(
+        (a) =>
+            a.tracebackId.trim().toUpperCase() == clean ||
+            a.id.trim().toUpperCase() == clean ||
+            a.tracebackId.replaceAll('-', '').trim().toUpperCase() == clean.replaceAll('-', ''),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<Asset?> lookupByTracebackIdRemote(String rawQuery) async {
+    final localMatch = lookupByTracebackId(rawQuery);
+    if (localMatch != null) return localMatch;
+    if (_isDemoMode) return null;
+    try {
+      final remoteAsset = await _firestoreService.findBelongingByTracebackId(rawQuery);
+      if (remoteAsset != null) {
+        if (!_assets.any((a) => a.id == remoteAsset.id)) {
+          _assets.add(remoteAsset);
+          notifyListeners();
+        }
+        return remoteAsset;
+      }
+    } catch (e) {
+      debugPrint('Remote lookup error: $e');
+    }
+    return null;
   }
 
   @override

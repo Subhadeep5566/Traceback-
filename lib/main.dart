@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'design/tb_theme.dart';
+import 'firebase_options.dart';
 import 'providers/asset_provider.dart';
 import 'services/auth_service.dart';
 import 'services/storage_service.dart';
@@ -9,14 +12,22 @@ import 'screens/main_navigation_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.white,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    ),
-  );
+
+  // Apply dark system UI immediately
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Tb.bg,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    debugPrint('Firebase initialization notice (safe in tests/offline): $e');
+  }
 
   final storageService = StorageService();
   await storageService.init();
@@ -53,17 +64,7 @@ class _TracebackAppState extends State<TracebackApp> {
       child: MaterialApp(
         title: 'TRACEBACK',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          fontFamily: 'sans-serif',
-          scaffoldBackgroundColor: Colors.white,
-          colorScheme: const ColorScheme.light(
-            primary: Colors.black,
-            onPrimary: Colors.white,
-            surface: Colors.white,
-            onSurface: Colors.black,
-          ),
-        ),
+        theme: Tb.theme,
         initialRoute: _authService.isLoggedIn ? '/home' : '/login',
         routes: {
           '/login': (context) => const LoginScreen(),

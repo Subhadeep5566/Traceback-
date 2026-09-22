@@ -1,8 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import '../services/demo_data_service.dart';
-import '../services/storage_service.dart';
-
 import '../models/user_profile.dart';
+import '../services/demo_data_service.dart';
+import '../services/firestore_service.dart';
+import '../services/storage_service.dart';
 
 enum AuthMode {
   production,
@@ -14,10 +16,12 @@ class AuthService extends ChangeNotifier {
   static const List<String> allowedEmailDomains = ['bgu.edu.in', 'bgu.ac.in'];
 
   final StorageService _storageService;
+  final FirestoreService _firestoreService;
   AuthMode _authMode = AuthMode.production;
   UserProfile? _userProfile;
 
-  AuthService(this._storageService) {
+  AuthService(this._storageService, [FirestoreService? firestoreService])
+      : _firestoreService = firestoreService ?? FirestoreService() {
     _initProfile();
   }
 
@@ -156,55 +160,184 @@ class AuthService extends ChangeNotifier {
         .hasMatch(trimmed);
   }
 
-  Future<AuthResult> login({
+  Future<AuthResult> registerWithEmailPassword({
+    required String name,
     required String email,
     required String phone,
-    UserRole role = UserRole.student,
+    required String password,
+    UserRole role = UserRole.user,
+    String? city,
+    String? studentId,
+    String? department,
   }) async {
     try {
+      final trimmedName = name.trim();
       final normalizedEmail = email.trim().toLowerCase();
       final normalizedPhone = normalizePhone(phone);
 
-      if (normalizedEmail.isEmpty) {
-        return AuthResult.failure('Please enter your BGU email address');
+      if (trimmedName.isEmpty) {
+        return AuthResult.failure('Please enter your full name');
       }
-
+      if (normalizedEmail.isEmpty) {
+        return AuthResult.failure('Please enter your email address');
+      }
       if (!isValidEmail(normalizedEmail)) {
         return AuthResult.failure('Please enter a valid email address');
       }
-
-      if (!isBguEmail(normalizedEmail)) {
-        return AuthResult.failure('Only BGU email addresses (@bgu.edu.in or @bgu.ac.in) are allowed');
-      }
-
       if (normalizedPhone.isEmpty) {
         return AuthResult.failure('Please enter your phone number');
       }
-
       if (!isValidPhone(normalizedPhone)) {
         return AuthResult.failure('Please enter a valid 10-digit phone number');
       }
+      if (password.length < 6) {
+        return AuthResult.failure('Password must be at least 6 characters');
+      }
 
-      final name = _extractNameFromEmail(normalizedEmail);
+      String uid = 'user_${DateTime.now().millisecondsSinceEpoch}';
+
+      if (Firebase.apps.isNotEmpty) {
+        try {
+          final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+          await credential.user?.updateDisplayName(trimmedName);
+          uid = credential.user?.uid ?? uid;
+        } on FirebaseAuthException catch (fe) {
+          if (fe.code == 'email-already-in-use') {
+            return AuthResult.failure('An account already exists with this email. Please sign in.');
+          } else if (fe.code == 'weak-password') {
+            return AuthResult.failure('The password provided is too weak.');
+          }
+          return AuthResult.failure(fe.message ?? 'Registration failed. Please try again.');
+        }
+      }
 
       _authMode = AuthMode.production;
       if (role == UserRole.admin) {
-        _userProfile = UserProfile.defaultAdmin(name: name, email: normalizedEmail, phone: normalizedPhone);
+        _userProfile = UserProfile(
+          userId: uid,
+          name: trimmedName,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          role: UserRole.admin,
+          city: city ?? 'Bhubaneswar',
+          designation: 'Property & Recovery Officer',
+          office: 'Traceback Asset Recovery Office',
+          officeLocation: 'Room G-04',
+          contactMethod: 'Phone & Message',
+        );
       } else {
-        _userProfile = UserProfile.defaultStudent(name: name, email: normalizedEmail, phone: normalizedPhone);
+        _userProfile = UserProfile(
+          userId: uid,
+          name: trimmedName,
+          email: normalizedEmail,
+          phone: normalizedPhone,
+          role: UserRole.user,
+          city: city ?? 'Bhubaneswar',
+          studentId: studentId ?? '',
+          department: department ?? '',
+          sharePhone: true,
+          shareEmail: true,
+          shareStudentId: false,
+        );
       }
 
+      await _firestoreService.saveUserProfile(_userProfile!);
       await _storageService.saveUserProfile(_userProfile!);
       await _storageService.saveUserSession(
         isLoggedIn: true,
         phone: normalizedPhone,
-        name: name,
+        name: trimmedName,
         email: normalizedEmail,
         role: role,
       );
 
       notifyListeners();
-      return AuthResult.success(name: name, phone: normalizedPhone);
+      return AuthResult.success(name: trimmedName, phone: normalizedPhone);
+    } catch (e, stackTrace) {
+      debugPrint('AuthService register error: $e\n$stackTrace');
+      return AuthResult.failure('Registration error: ${e.toString()}');
+    }
+  }
+
+  Future<AuthResult> login({
+    required String email,
+    String? phone,
+    String? password,
+    UserRole role = UserRole.user,
+  }) async {
+    try {
+      final normalizedEmail = email.trim().toLowerCase();
+      final normalizedPhone = phone != null ? normalizePhone(phone) : '';
+
+      if (normalizedEmail.isEmpty) {
+        return AuthResult.failure('Please enter your email address');
+      }
+      if (!isValidEmail(normalizedEmail)) {
+        return AuthResult.failure('Please enter a valid email address');
+      }
+
+      if (password == null || password.isEmpty) {
+        if (normalizedPhone.isEmpty) {
+          return AuthResult.failure('Please enter your phone number or password');
+        }
+        if (!isValidPhone(normalizedPhone)) {
+          return AuthResult.failure('Please enter a valid 10-digit phone number');
+        }
+      }
+
+      String uid = 'user_${DateTime.now().millisecondsSinceEpoch}';
+      String name = _extractNameFromEmail(normalizedEmail);
+      String userPhoneNum = normalizedPhone;
+
+      if (password != null && password.isNotEmpty && Firebase.apps.isNotEmpty) {
+        try {
+          final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+          uid = credential.user?.uid ?? uid;
+          name = credential.user?.displayName ?? name;
+
+          final remoteProfile = await _firestoreService.getUserProfile(uid);
+          if (remoteProfile != null) {
+            _userProfile = remoteProfile;
+            name = remoteProfile.name;
+            userPhoneNum = remoteProfile.phone;
+          }
+        } on FirebaseAuthException catch (fe) {
+          if (fe.code == 'user-not-found') {
+            return AuthResult.failure('No account found for this email. Please register.');
+          } else if (fe.code == 'wrong-password' || fe.code == 'invalid-credential') {
+            return AuthResult.failure('Invalid email or password.');
+          }
+          return AuthResult.failure(fe.message ?? 'Authentication failed.');
+        }
+      }
+
+      _authMode = AuthMode.production;
+      if (_userProfile == null) {
+        if (role == UserRole.admin) {
+          _userProfile = UserProfile.defaultAdmin(name: name, email: normalizedEmail, phone: userPhoneNum);
+        } else {
+          _userProfile = UserProfile.defaultStudent(name: name, email: normalizedEmail, phone: userPhoneNum);
+        }
+        await _firestoreService.saveUserProfile(_userProfile!);
+      }
+
+      await _storageService.saveUserProfile(_userProfile!);
+      await _storageService.saveUserSession(
+        isLoggedIn: true,
+        phone: userPhoneNum,
+        name: name,
+        email: normalizedEmail,
+        role: _userProfile!.role,
+      );
+
+      notifyListeners();
+      return AuthResult.success(name: name, phone: userPhoneNum);
     } catch (e, stackTrace) {
       debugPrint('AuthService login error: $e\n$stackTrace');
       return AuthResult.failure('Authentication error. Please try again.');
@@ -215,6 +348,9 @@ class AuthService extends ChangeNotifier {
     try {
       _authMode = AuthMode.production;
       _userProfile = null;
+      if (Firebase.apps.isNotEmpty) {
+        await FirebaseAuth.instance.signOut();
+      }
       await _storageService.clearSession();
       notifyListeners();
     } catch (e) {
@@ -233,7 +369,7 @@ class AuthService extends ChangeNotifier {
           .trim();
 
       if (cleaned.isEmpty) {
-        return 'BGU User';
+        return 'User';
       }
 
       return cleaned
@@ -242,7 +378,7 @@ class AuthService extends ChangeNotifier {
           .map((word) => word[0].toUpperCase() + word.substring(1).toLowerCase())
           .join(' ');
     } catch (_) {
-      return 'BGU User';
+      return 'User';
     }
   }
 }

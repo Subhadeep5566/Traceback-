@@ -85,7 +85,7 @@ void main() {
       expect(authService.userName, equals('Subhadeep Saha'));
     });
 
-    test('Login rejects non-BGU email with proper error message', () async {
+    test('Login accepts general email without BGU domain restriction', () async {
       SharedPreferences.setMockInitialValues({});
       final storageService = StorageService();
       final authService = AuthService(storageService);
@@ -95,9 +95,9 @@ void main() {
         phone: '9876543210',
       );
 
-      expect(result.isSuccess, isFalse);
-      expect(result.errorMessage, contains('Only BGU email addresses'));
-      expect(authService.isLoggedIn, isFalse);
+      expect(result.isSuccess, isTrue);
+      expect(authService.isLoggedIn, isTrue);
+      expect(authService.userEmail, equals('user@gmail.com'));
     });
   });
 }

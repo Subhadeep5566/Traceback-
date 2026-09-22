@@ -1,0 +1,146 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────
+    // Helper functions
+    // ─────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidLocation(data) {
+      // Allow if no location fields present, or if they are in valid ranges
+      return !('latitude' in data) ||
+        (data.latitude is float &&
+         data.longitude is float &&
+         data.latitude >= -90 && data.latitude <= 90 &&
+         data.longitude >= -180 && data.longitude <= 180);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /users/{uid} — User profiles
+    // User can read/write only their own profile. Admins can read all.
+    // ─────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /items/{itemId} — Registered belongings
+    // Owner manages their own items. Any signed-in user can read
+    // items that are lost/found/recovered (needed for map & QR scan).
+    // ─────────────────────────────────────────────────────────────
+    match /items/{itemId} {
+      allow read: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid ||
+         resource.data.status in ['lost', 'found', 'recovered'] ||
+         isAdmin());
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid &&
+        isValidLocation(request.resource.data);
+      allow update: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin()) &&
+        isValidLocation(request.resource.data);
+      allow delete: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /belongings/{itemId} — Backward-compatible alias for /items
+    // ─────────────────────────────────────────────────────────────
+    match /belongings/{itemId} {
+      allow read: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid ||
+         resource.data.status in ['lost', 'found', 'recovered'] ||
+         isAdmin());
+      allow create: if isSignedIn() &&
+        request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid ||
+         // Allow status update to 'found'/'recovered' by any signed-in user
+         request.resource.data.status in ['found', 'recovered', 'matched'] ||
+         isAdmin());
+      allow delete: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /found_items/{foundItemId} — Items reported found by finders
+    // Any signed-in user can read (for matching). Only finder can write.
+    // ─────────────────────────────────────────────────────────────
+    match /found_items/{foundItemId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.finderId == request.auth.uid &&
+        isValidLocation(request.resource.data);
+      allow update: if isSignedIn() &&
+        (resource.data.finderId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /found_reports/{reportId} — Recovery workflow reports
+    // ─────────────────────────────────────────────────────────────
+    match /found_reports/{reportId} {
+      allow read: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid ||
+         resource.data.finderId == request.auth.uid ||
+         resource.data.reportedById == request.auth.uid ||
+         isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() &&
+        (resource.data.finderId == request.auth.uid ||
+         resource.data.matchedOwnerId == request.auth.uid ||
+         isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /incidents/{incidentId}
+    // ─────────────────────────────────────────────────────────────
+    match /incidents/{incidentId} {
+      allow read: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() &&
+        (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // /notifications/{notifId}
+    // ─────────────────────────────────────────────────────────────
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Catch-all — deny everything not explicitly granted above
+    // ─────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

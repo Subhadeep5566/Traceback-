@@ -74,7 +74,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should show validation errors
-      expect(find.text('Please enter your BGU email'), findsOneWidget);
+      expect(find.text('Please enter your email'), findsOneWidget);
       expect(find.text('Please enter your phone number'), findsOneWidget);
       expect(find.byType(LoginScreen), findsOneWidget);
     });
@@ -102,7 +102,7 @@ void main() {
       expect(find.byType(LoginScreen), findsOneWidget);
     });
 
-    testWidgets('Login shows validation error for non-BGU email', (WidgetTester tester) async {
+    testWidgets('Login succeeds with general email address', (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({});
       
       final storageService = StorageService();
@@ -111,7 +111,7 @@ void main() {
       await tester.pumpWidget(TracebackApp(storageService: storageService));
       await tester.pumpAndSettle();
 
-      // Enter non-BGU email
+      // Enter general email
       await tester.enterText(find.byKey(const Key('email_field')), 'user@gmail.com');
       await tester.enterText(find.byKey(const Key('phone_field')), '9876543210');
       await tester.pumpAndSettle();
@@ -120,9 +120,8 @@ void main() {
       await tester.tap(find.byKey(const Key('continue_button')));
       await tester.pumpAndSettle();
 
-      // Should show validation error
-      expect(find.text('Only BGU email addresses (@bgu.edu.in, @bgu.ac.in) are allowed'), findsOneWidget);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      // Should navigate to dashboard
+      expect(find.byType(LoginScreen), findsNothing);
     });
 
     testWidgets('Login shows validation error for invalid phone', (WidgetTester tester) async {

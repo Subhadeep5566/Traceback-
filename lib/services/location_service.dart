@@ -46,8 +46,12 @@ class LocationResult {
 }
 
 class LocationService {
+  static const double bhubaneswarLatitude = 20.2961;
+  static const double bhubaneswarLongitude = 85.8245;
+  static const LatLng bhubaneswarCenter = LatLng(20.2961, 85.8245);
   static const LatLng bguCampusCenter = LatLng(20.2982, 85.7434);
   static const String defaultCampusAddress = 'Birla Global University, Gothapatna, Bhubaneswar';
+  static const String defaultCityAddress = 'Bhubaneswar, Odisha, India';
 
   static Future<bool> isLocationServiceEnabled() async {
     try {
@@ -136,11 +140,22 @@ class LocationService {
   }
 
   static String _formatCoordinatesAsCampusAddress(double lat, double lng) {
-    // If coordinates are in/near BGU Bhubaneswar
-    if ((lat - 20.2982).abs() < 0.05 && (lng - 85.7434).abs() < 0.05) {
-      return 'BGU Campus Area, Bhubaneswar';
+    return reverseGeocodeLabel(lat, lng);
+  }
+
+  static String reverseGeocodeLabel(double lat, double lng) {
+    if ((lat - 20.2982).abs() < 0.03 && (lng - 85.7434).abs() < 0.03) {
+      return 'BGU Campus, Gothapatna, Bhubaneswar';
+    } else if ((lat - 20.2961).abs() < 0.04 && (lng - 85.8245).abs() < 0.04) {
+      return 'Bhubaneswar Central, Odisha';
+    } else if ((lat - 20.3533).abs() < 0.04 && (lng - 85.8189).abs() < 0.04) {
+      return 'Patia Area, Bhubaneswar';
+    } else if ((lat - 20.3010).abs() < 0.04 && (lng - 85.8180).abs() < 0.04) {
+      return 'Jayadev Vihar, Bhubaneswar';
+    } else if ((lat - 20.2666).abs() < 0.04 && (lng - 85.8440).abs() < 0.04) {
+      return 'Bhubaneswar Station Area';
     }
-    return '${lat.toStringAsFixed(4)}°N, ${lng.toStringAsFixed(4)}°E';
+    return '${lat.toStringAsFixed(4)}°N, ${lng.toStringAsFixed(4)}°E (Bhubaneswar)';
   }
 
   static TrackingState computeTrackingState({
@@ -172,4 +187,31 @@ class LocationService {
     if (diff.inDays == 1) return 'Yesterday';
     return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
   }
+
+  // ──────────────────────────────────────────────
+  // Navigation / Directions
+  // ──────────────────────────────────────────────
+
+  /// Returns a standard [geo:] URI that the OS will route to whatever
+  /// mapping/navigation app the user has installed (Google Maps, OsmAnd,
+  /// Apple Maps, Here WeGo, etc.). No Google Maps SDK required.
+  ///
+  /// Usage:
+  ///   final uri = LocationService.getDirectionsUri(20.2961, 85.8245);
+  ///   await launchUrl(uri, mode: LaunchMode.externalApplication);
+  static Uri getDirectionsUri(double latitude, double longitude, {String? label}) {
+    // geo: URI is the standard cross-platform deep-link for map apps.
+    // Android and iOS both handle it natively.
+    final latStr = latitude.toStringAsFixed(6);
+    final lngStr = longitude.toStringAsFixed(6);
+    final query = label != null
+        ? '$latStr,$lngStr($Uri.encodeComponent(label))'
+        : '$latStr,$lngStr';
+    return Uri.parse('geo:$latStr,$lngStr?q=$query');
+  }
+
+  /// Returns a human-readable directions URL string.
+  static String getDirectionsUrl(double latitude, double longitude) =>
+      getDirectionsUri(latitude, longitude).toString();
 }
+

@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/asset.dart';
+import '../models/user_profile.dart';
 import '../providers/asset_provider.dart';
+import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
 import '../services/location_service.dart';
+import 'map_location_picker_screen.dart';
 
 class FoundItemScreen extends StatefulWidget {
   final String? initialTagId;
@@ -17,467 +23,128 @@ class FoundItemScreen extends StatefulWidget {
 }
 
 class _FoundItemScreenState extends State<FoundItemScreen> {
+  late final TextEditingController _searchController;
+  final TextEditingController _locationController = TextEditingController(text: 'Campus Security / Reception');
+  final TextEditingController _noteController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialTagId != null && widget.initialTagId!.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _openManualEntrySheet(initialValue: widget.initialTagId);
-      });
-    }
-  }
-
-  void _openManualEntrySheet({String? initialValue}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _ManualTagEntrySheet(
-        initialValue: initialValue,
-        onAssetFound: (asset) {
-          Navigator.pop(ctx);
-          _openReportFoundSheet(asset);
-        },
-      ),
-    );
-  }
-
-  void _openReportFoundSheet(Asset asset) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _ReportFoundSheet(asset: asset),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
-                onPressed: () => Navigator.pop(context),
-              )
-            : null,
-        title: const Text(
-          'SCAN TRACEBACK TAG',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.0,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.keyboard_rounded, color: Colors.white70, size: 22),
-            tooltip: 'Enter ID manually',
-            onPressed: () => _openManualEntrySheet(),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Camera Area with centered scanning reticle
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Viewfinder Box
-                      Container(
-                        width: 250,
-                        height: 250,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.04),
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.5),
-                        ),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // Corner markers
-                            Positioned(
-                              top: 14,
-                              left: 14,
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    top: BorderSide(color: Colors.white, width: 3),
-                                    left: BorderSide(color: Colors.white, width: 3),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 14,
-                              right: 14,
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    top: BorderSide(color: Colors.white, width: 3),
-                                    right: BorderSide(color: Colors.white, width: 3),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 14,
-                              left: 14,
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(color: Colors.white, width: 3),
-                                    left: BorderSide(color: Colors.white, width: 3),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 14,
-                              right: 14,
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(color: Colors.white, width: 3),
-                                    right: BorderSide(color: Colors.white, width: 3),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                            // Scanning icon
-                            Icon(
-                              Icons.qr_code_scanner_rounded,
-                              size: 72,
-                              color: Colors.white.withOpacity(0.4),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 36),
-
-                      // Centered labels per spec
-                      const Text(
-                        'Scan Traceback Tag',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Scan the QR code attached to a registered item.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.65),
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w500,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-
-                      // OR divider
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(width: 32, height: 1, color: Colors.white24),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: Text(
-                              'OR',
-                              style: TextStyle(
-                                color: Colors.white54,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.5,
-                              ),
-                            ),
-                          ),
-                          Container(width: 32, height: 1, color: Colors.white24),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // [ Enter Traceback ID ] button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: const BorderSide(color: Colors.white30),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            backgroundColor: Colors.white.withOpacity(0.08),
-                          ),
-                          onPressed: () => _openManualEntrySheet(),
-                          icon: const Icon(Icons.tag_rounded, size: 18),
-                          label: const Text(
-                            'Enter Traceback ID',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Sheet 1: Enter Traceback ID
-// ---------------------------------------------------------------------------
-class _ManualTagEntrySheet extends StatefulWidget {
-  final String? initialValue;
-  final ValueChanged<Asset> onAssetFound;
-
-  const _ManualTagEntrySheet({
-    this.initialValue,
-    required this.onAssetFound,
-  });
-
-  @override
-  State<_ManualTagEntrySheet> createState() => _ManualTagEntrySheetState();
-}
-
-class _ManualTagEntrySheetState extends State<_ManualTagEntrySheet> {
-  late final TextEditingController _controller;
-  String? _error;
-  bool _isLoading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialValue ?? '');
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _lookup() {
-    final raw = _controller.text.trim().toUpperCase();
-    if (raw.isEmpty) return;
-
-    final clean = raw.replaceAll('TRACEBACK://ITEM/', '').trim();
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    final provider = context.read<AssetProvider>();
-    final asset = provider.allAssets.cast<Asset?>().firstWhere(
-          (a) =>
-              a?.tracebackId.toUpperCase() == clean ||
-              a?.id.toUpperCase() == clean ||
-              a?.identifier.toUpperCase() == clean,
-          orElse: () => null,
-        );
-
-    setState(() => _isLoading = false);
-
-    if (asset != null) {
-      widget.onAssetFound(asset);
-    } else {
-      setState(() {
-        _error = 'No belonging found with ID "$clean"';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final provider = context.watch<AssetProvider>();
-
-    return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 14,
-        bottom: bottomInset + 24,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Drag handle
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFCBD5E1),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 18),
-
-          const Text(
-            'Enter Traceback ID',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: Colors.black,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Type the ID printed on the belonging or its QR tag.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-          ),
-          const SizedBox(height: 16),
-
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.characters,
-            decoration: InputDecoration(
-              hintText: 'e.g. TB-BIKE-001',
-              hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13.5),
-              filled: true,
-              fillColor: const Color(0xFFF8FAFC),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: Colors.black, width: 1.5),
-              ),
-              suffixIcon: _controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () => setState(() => _controller.clear()),
-                    )
-                  : null,
-            ),
-            onChanged: (_) => setState(() => _error = null),
-            onSubmitted: (_) => _lookup(),
-          ),
-
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: const TextStyle(color: Color(0xFFE11D48), fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ],
-
-          // Quick presets
-          if (provider.allAssets.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: provider.allAssets.take(4).map((a) {
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ActionChip(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      label: Text(
-                        a.tracebackId,
-                        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
-                      ),
-                      backgroundColor: const Color(0xFFF1F5F9),
-                      onPressed: () {
-                        _controller.text = a.tracebackId;
-                        _lookup();
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ],
-          const SizedBox(height: 20),
-
-          // [ Continue ]
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: _isLoading ? null : _lookup,
-              child: _isLoading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Continue', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Sheet 2: Found Belonging Report
-// ---------------------------------------------------------------------------
-class _ReportFoundSheet extends StatefulWidget {
-  final Asset asset;
-
-  const _ReportFoundSheet({required this.asset});
-
-  @override
-  State<_ReportFoundSheet> createState() => _ReportFoundSheetState();
-}
-
-class _ReportFoundSheetState extends State<_ReportFoundSheet> {
-  final _formKey = GlobalKey<FormState>();
-  final _locationController = TextEditingController(text: 'BGU Campus, Bhubaneswar');
-  final _noteController = TextEditingController();
-  bool _isDetectingLocation = false;
+  Asset? _matchedAsset;
+  UserProfile? _ownerProfile;
+  bool _hasSearched = false;
+  bool _isSearching = false;
   bool _isSubmitting = false;
+  bool _reportSuccess = false;
+  bool _isDetectingLocation = false;
+  double? _latitude;
+  double? _longitude;
+
+  Future<void> _makeCall(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'\D'), '');
+    final uri = Uri.parse('tel:$clean');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Phone dialer not available for $phone')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Owner phone: $phone')),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendSms(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'\D'), '');
+    final uri = Uri.parse('sms:$clean');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Messaging app not available for $phone')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Owner phone: $phone')),
+        );
+      }
+    }
+  }
+
+  Future<void> _contactOwner(String email) async {
+    final uri = Uri.parse('mailto:$email?subject=Found%20Your%20Item%20on%20Traceback');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Owner email: $email')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Owner email: $email')),
+        );
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: widget.initialTagId ?? '');
+    if (widget.initialTagId != null && widget.initialTagId!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _performSearch());
+    }
+  }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _locationController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  Future<void> _performSearch() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    setState(() {
+      _isSearching = true;
+      _hasSearched = false;
+      _reportSuccess = false;
+      _ownerProfile = null;
+    });
+
+    final provider = context.read<AssetProvider>();
+    final found = await provider.lookupByTracebackIdRemote(query);
+
+    UserProfile? profile;
+    if (found != null && found.ownerId.isNotEmpty) {
+      try {
+        final firestoreService = FirestoreService();
+        profile = await firestoreService.getUserProfile(found.ownerId);
+      } catch (e) {
+        debugPrint('Error loading owner profile: $e');
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _matchedAsset = found;
+        _ownerProfile = profile;
+        _hasSearched = true;
+        _isSearching = false;
+      });
+    }
   }
 
   Future<void> _detectLocation() async {
@@ -486,6 +153,8 @@ class _ReportFoundSheetState extends State<_ReportFoundSheet> {
       final loc = await LocationService.getCurrentLocation();
       if (mounted) {
         setState(() {
+          _latitude = loc.latitude;
+          _longitude = loc.longitude;
           _locationController.text = loc.address;
           _isDetectingLocation = false;
         });
@@ -495,220 +164,718 @@ class _ReportFoundSheetState extends State<_ReportFoundSheet> {
     }
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _pickOnMap() async {
+    final initialPos = (_latitude != null && _longitude != null)
+        ? ll.LatLng(_latitude!, _longitude!)
+        : const ll.LatLng(
+            LocationService.bhubaneswarLatitude,
+            LocationService.bhubaneswarLongitude,
+          );
+
+    final result = await Navigator.push<MapLocationResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapLocationPickerScreen(
+          initialPosition: initialPos,
+          title: 'Select Drop-off Location',
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        _latitude = result.latitude;
+        _longitude = result.longitude;
+        _locationController.text = result.address;
+      });
+    }
+  }
+
+  Future<void> _submitFoundReport() async {
+    if (_matchedAsset == null) return;
+    final location = _locationController.text.trim();
+    if (location.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please specify where the item was found / handed over'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
+    final provider = context.read<AssetProvider>();
+    final auth = context.read<AuthService>();
 
     try {
-      final provider = context.read<AssetProvider>();
       await provider.reportFound(
-        assetId: widget.asset.id,
-        foundLocation: _locationController.text.trim(),
-        note: _noteController.text.trim().isNotEmpty ? _noteController.text.trim() : null,
+        assetId: _matchedAsset!.id,
+        foundLocation: location,
+        coordinates: _latitude != null && _longitude != null
+            ? ll.LatLng(_latitude!, _longitude!)
+            : null,
+        note: _noteController.text.trim().isNotEmpty
+            ? _noteController.text.trim()
+            : 'Found on campus and handed over at $location.',
+        reporterName: auth.userName ?? 'Campus Finder',
+        reporterContact: auth.userPhone ?? '',
       );
 
       if (mounted) {
-        Navigator.pop(context); // Close sheet
-        _showSuccessDialog();
+        setState(() {
+          _isSubmitting = false;
+          _reportSuccess = true;
+          // Refresh matched asset with updated status
+          _matchedAsset = provider.getAssetById(_matchedAsset!.id);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Owner notified! Item secured at $location.'),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSubmitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e'), backgroundColor: const Color(0xFFE11D48)),
+          SnackBar(
+            content: Text('Failed to report: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check_rounded, color: Color(0xFF10B981), size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Text('Report Submitted', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-          ],
-        ),
-        content: Text(
-          'The owner of ${widget.asset.name} has been securely notified of the found location.',
-          style: const TextStyle(fontSize: 13.5, color: Color(0xFF475569), height: 1.4),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('DONE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-
-    return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 14,
-        bottom: bottomInset + 24,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+    return Scaffold(
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: Navigator.canPop(context)
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
+            title: const Text(
+              'Found an Item',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(height: 18),
-
-            // Item summary row
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(10),
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(1),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+            ),
+          ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Search Input Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.02),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'ENTER TRACEBACK TAG ID',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _searchController,
+                                textCapitalization: TextCapitalization.characters,
+                                onSubmitted: (_) => _performSearch(),
+                                decoration: InputDecoration(
+                                  hintText: 'e.g. TB-LAPTOP-002',
+                                  hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.search_rounded, color: Colors.black, size: 20),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF1F5F9),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              height: 48,
+                              child: ElevatedButton(
+                                onPressed: _isSearching ? null : _performSearch,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.black,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                                ),
+                                child: _isSearching
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                      )
+                                    : const Text(
+                                        'Search',
+                                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Selector<AssetProvider, List<String>>(
+                          selector: (_, p) => p.allAssets.take(4).map((a) => a.tracebackId).toList(),
+                          builder: (context, quickTags, _) {
+                            if (quickTags.isEmpty) return const SizedBox.shrink();
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 14),
+                                const Text(
+                                  'Quick test tags:',
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: quickTags.map((tagId) {
+                                    return InkWell(
+                                      onTap: () {
+                                        _searchController.text = tagId;
+                                        _performSearch();
+                                      },
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          tagId,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontFamily: 'monospace',
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.black,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Icon(widget.asset.category.icon, size: 20, color: Colors.black),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.asset.name,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.black),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${widget.asset.tracebackId} • ${widget.asset.status.displayName}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: widget.asset.status.color,
-                          fontWeight: FontWeight.w700,
+                  const SizedBox(height: 24),
+
+                  // Search Results Area
+                  if (_hasSearched) ...[
+                    if (_matchedAsset == null)
+                      // Compact "No item found" state
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 48,
+                              height: 48,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.search_off_rounded,
+                                color: Color(0xFF94A3B8),
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No item found',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.black,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'No registered belonging matches this Traceback ID.\nPlease check the tag and try again.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      )
+                    else ...[
+                      // Item Card
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: _matchedAsset!.isLost
+                                ? const Color(0xFFFECDD3)
+                                : const Color(0xFFE2E8F0),
+                            width: _matchedAsset!.isLost ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Possible Match Header Banner
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    'POSSIBLE MATCH',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 0.8,
+                                      color: Color(0xFF1D4ED8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 50,
+                                  height: 50,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Icon(_matchedAsset!.category.icon, size: 26, color: Colors.black),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _matchedAsset!.name,
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                      if (_matchedAsset!.brand.isNotEmpty || _matchedAsset!.model.isNotEmpty)
+                                        Text(
+                                          '${_matchedAsset!.brand} ${_matchedAsset!.model}'.trim(),
+                                          style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                                        ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _matchedAsset!.tracebackId,
+                                        style: const TextStyle(
+                                          fontFamily: 'monospace',
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                _buildStatusPill(_matchedAsset!),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            // Privacy & Owner Contact Information Card
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.contact_phone_outlined, size: 15, color: Color(0xFF0F172A)),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        'OWNER CONTACT',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.8,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  if (_ownerProfile != null && _ownerProfile!.phone.isNotEmpty) ...[
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.phone_rounded, size: 14, color: Color(0xFF10B981)),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _ownerProfile!.phone,
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            onPressed: () => _makeCall(_ownerProfile!.phone),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFF10B981),
+                                              foregroundColor: Colors.white,
+                                              elevation: 0,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
+                                            ),
+                                            icon: const Icon(Icons.call_rounded, size: 15),
+                                            label: const Text('Call Owner', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: () => _sendSms(_ownerProfile!.phone),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.black,
+                                              side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
+                                            ),
+                                            icon: const Icon(Icons.sms_rounded, size: 15),
+                                            label: const Text('Send Message', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ] else if (_ownerProfile != null && _ownerProfile!.email.isNotEmpty) ...[
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.email_outlined, size: 14, color: Color(0xFF0284C7)),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _ownerProfile!.email,
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.black),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _contactOwner(_ownerProfile!.email),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.black,
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                        icon: const Icon(Icons.mail_outline_rounded, size: 15),
+                                        label: const Text('Contact Owner', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    const Text(
+                                      'Owner details secured. Submit the drop-off location below to notify the owner.',
+                                      style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(height: 20),
+
+                      // Safe Report / Contact Section
+                      if (!_reportSuccess)
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'SAFE FOUND REPORT',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Report where the item was found or handed over so the owner can recover it safely.',
+                                style: TextStyle(fontSize: 12.5, color: Color(0xFF475569)),
+                              ),
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _locationController,
+                                decoration: InputDecoration(
+                                  labelText: 'Drop-off / Handover Location *',
+                                  hintText: 'e.g. Main Gate Security, Room 204',
+                                  prefixIcon: const Icon(Icons.place_outlined, size: 20),
+                                  suffixIcon: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: _isDetectingLocation
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                              )
+                                            : const Icon(Icons.my_location_rounded, size: 20, color: Colors.black),
+                                        onPressed: _isDetectingLocation ? null : _detectLocation,
+                                        tooltip: 'Use current GPS location',
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.map_rounded, size: 20, color: Color(0xFF0284C7)),
+                                        onPressed: _pickOnMap,
+                                        tooltip: 'Select on Google Map',
+                                      ),
+                                      const SizedBox(width: 4),
+                                    ],
+                                  ),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF8FAFC),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  OutlinedButton.icon(
+                                    onPressed: _isDetectingLocation ? null : _detectLocation,
+                                    icon: const Icon(Icons.my_location_rounded, size: 14),
+                                    label: const Text('Current GPS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.black,
+                                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  OutlinedButton.icon(
+                                    onPressed: _pickOnMap,
+                                    icon: const Icon(Icons.map_rounded, size: 14),
+                                    label: const Text('Select on Map', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF0284C7),
+                                      side: const BorderSide(color: Color(0xFFBAE6FD)),
+                                      backgroundColor: const Color(0xFFF0F9FF),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                controller: _noteController,
+                                decoration: InputDecoration(
+                                  labelText: 'Optional Note for Owner',
+                                  hintText: 'e.g. Left with security guard Ramesh',
+                                  prefixIcon: const Icon(Icons.note_outlined, size: 20),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF8FAFC),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 48,
+                                child: ElevatedButton.icon(
+                                  onPressed: _isSubmitting ? null : _submitFoundReport,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.black,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.send_rounded, size: 18),
+                                  label: _isSubmitting
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                        )
+                                      : const Text(
+                                          'Notify Owner Safely',
+                                          style: TextStyle(fontWeight: FontWeight.w800),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFBBF7D0)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 24),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Thank you! The item report has been logged and the owner notified.',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF166534),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
-            const SizedBox(height: 14),
-
-            // Found location
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'FOUND LOCATION *',
-                  style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-                ),
-                TextButton(
-                  onPressed: _isDetectingLocation ? null : _detectLocation,
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-                  child: Text(
-                    _isDetectingLocation ? 'Detecting...' : 'Use Current Location',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.black),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            TextFormField(
-              controller: _locationController,
-              decoration: InputDecoration(
-                hintText: 'e.g. BGU Library 2nd floor',
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-              ),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Enter location' : null,
-            ),
-            const SizedBox(height: 12),
-
-            // Note
-            const Text(
-              'NOTE (OPTIONAL)',
-              style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 4),
-            TextFormField(
-              controller: _noteController,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: 'e.g. Left with campus security guard',
-                hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
-                filled: true,
-                fillColor: const Color(0xFFF8FAFC),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                  ],
+                ],
               ),
             ),
-            const SizedBox(height: 20),
+          ),
+        );
+  }
 
-            // Submit
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _isSubmitting ? null : _submit,
-                child: _isSubmitting
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text(
-                        'Report Found & Notify Owner',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
-                      ),
-              ),
+  Widget _buildStatusPill(Asset asset) {
+    Color color = const Color(0xFF10B981);
+    String label = 'Safe';
+
+    if (asset.isLost) {
+      color = const Color(0xFFEF4444);
+      label = 'Lost';
+    } else if (asset.isFound) {
+      color = const Color(0xFFF59E0B);
+      label = 'Found';
+    } else if (asset.isRecovered) {
+      color = const Color(0xFF0284C7);
+      label = 'Recovered';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w900,
+              color: color,
+              letterSpacing: 0.5,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

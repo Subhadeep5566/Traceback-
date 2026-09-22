@@ -127,7 +127,7 @@ class AdminDashboardScreen extends StatelessWidget {
     if (assets.isEmpty) return;
     Asset selectedAsset = assets.first;
     ReportType reportType = ReportType.lost;
-    final locationController = TextEditingController(text: 'BGU Campus');
+    final locationController = TextEditingController(text: 'Campus');
     final noteController = TextEditingController();
 
     showDialog(
@@ -135,14 +135,14 @@ class AdminDashboardScreen extends StatelessWidget {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setModalState) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Report on Behalf of Student', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          title: const Text('Report on Behalf of User', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Select the student belonging to report lost or stolen.',
+                  'Select the belonging to report lost or stolen.',
                   style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 14),
@@ -271,7 +271,7 @@ class AdminDashboardScreen extends StatelessWidget {
                               ),
                               const SizedBox(width: 6),
                               const Text(
-                                'BGU RECOVERY DESK',
+                                'TRACEBACK ADMIN DESK',
                                 style: TextStyle(
                                   color: Color(0xFF0284C7),
                                   fontSize: 10.5,
@@ -311,7 +311,7 @@ class AdminDashboardScreen extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _buildMetricTile(
-                          label: 'ACTIVE CASES',
+                           label: 'ACTIVE CASES',
                           count: provider.activeCases.length,
                           color: const Color(0xFFEF4444),
                           bg: const Color(0xFFFEF2F2),
@@ -372,7 +372,7 @@ class AdminDashboardScreen extends StatelessWidget {
                         child: OutlinedButton.icon(
                           onPressed: () => _showReportOnBehalfDialog(context, adminProfile, provider.allAssets),
                           icon: const Icon(Icons.person_search_rounded, size: 16, color: Colors.black),
-                          label: const Text('File for Student', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black, fontSize: 12.5)),
+                          label: const Text('File for User', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black, fontSize: 12.5)),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             side: const BorderSide(color: Color(0xFFCBD5E1)),

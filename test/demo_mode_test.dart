@@ -36,17 +36,17 @@ void main() {
     });
 
     test('Production credentials validation is NOT bypassed or relaxed', () async {
-      // Non-BGU email must fail
+      // Malformed email must fail
       final failEmail = await authService.login(
-        email: 'attacker@gmail.com',
+        email: 'invalid-email-format',
         phone: '9876543210',
       );
       expect(failEmail.isSuccess, isFalse);
-      expect(failEmail.errorMessage, contains('Only BGU email addresses'));
+      expect(failEmail.errorMessage, contains('valid email'));
 
       // Invalid phone must fail
       final failPhone = await authService.login(
-        email: 'student@bgu.ac.in',
+        email: 'user@example.com',
         phone: '12345',
       );
       expect(failPhone.isSuccess, isFalse);

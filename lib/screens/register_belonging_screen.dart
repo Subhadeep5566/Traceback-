@@ -1,55 +1,63 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../models/asset.dart';
 import '../providers/asset_provider.dart';
-import '../services/location_service.dart';
 
 class RegisterBelongingScreen extends StatefulWidget {
-  const RegisterBelongingScreen({super.key});
+  final Asset? editingAsset;
+
+  const RegisterBelongingScreen({
+    super.key,
+    this.editingAsset,
+  });
 
   @override
   State<RegisterBelongingScreen> createState() => _RegisterBelongingScreenState();
 }
 
 class _RegisterBelongingScreenState extends State<RegisterBelongingScreen> {
-  int _currentStep = 0; // 0: Category, 1: Basic Info, 2: Confirm & Tag
-
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _brandController = TextEditingController();
-  final TextEditingController _modelController = TextEditingController();
-  final TextEditingController _colorController = TextEditingController();
-  final TextEditingController _locationController = TextEditingController(
-    text: 'BGU Campus, Bhubaneswar',
-  );
+  late final TextEditingController _nameController;
+  late final TextEditingController _brandController;
+  late final TextEditingController _modelController;
+  late final TextEditingController _serialController;
+  late final TextEditingController _tagIdController;
+  late final TextEditingController _colorController;
 
-  AssetCategory _selectedCategory = AssetCategory.vehicle;
-  String _categoryLabel = 'Bike';
-  bool _isDetectingLocation = false;
+  late AssetCategory _selectedCategory;
   bool _isSaving = false;
-  String _generatedTagId = '';
 
-  final List<Map<String, dynamic>> _categoryOptions = [
-    {'category': AssetCategory.vehicle, 'label': 'Bike', 'icon': Icons.two_wheeler_rounded, 'subtitle': 'Cycle, Scooter, Motorbike'},
-    {'category': AssetCategory.electronics, 'label': 'Laptop', 'icon': Icons.laptop_mac_rounded, 'subtitle': 'MacBook, Dell, ThinkPad'},
-    {'category': AssetCategory.phone, 'label': 'Phone', 'icon': Icons.smartphone_rounded, 'subtitle': 'iPhone, Android smartphone'},
-    {'category': AssetCategory.belonging, 'label': 'Personal Bag', 'icon': Icons.backpack_rounded, 'subtitle': 'Backpack, Handbag, Kit'},
-    {'category': AssetCategory.belonging, 'label': 'Other', 'icon': Icons.category_rounded, 'subtitle': 'Watches, Books, Chargers'},
+  final List<Map<String, dynamic>> _categories = [
+    {'category': AssetCategory.electronics, 'label': 'Laptop', 'icon': Icons.laptop_mac_rounded},
+    {'category': AssetCategory.phone, 'label': 'Phone', 'icon': Icons.smartphone_rounded},
+    {'category': AssetCategory.vehicle, 'label': 'Bike / Cycle', 'icon': Icons.two_wheeler_rounded},
+    {'category': AssetCategory.belonging, 'label': 'Bag / Other', 'icon': Icons.backpack_rounded},
   ];
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateGeneratedTagId();
-    });
+    final item = widget.editingAsset;
+    _nameController = TextEditingController(text: item?.name ?? '');
+    _brandController = TextEditingController(text: item?.brand ?? '');
+    _modelController = TextEditingController(text: item?.model ?? '');
+    _serialController = TextEditingController(text: item?.description ?? '');
+    _tagIdController = TextEditingController(text: item?.tracebackId ?? '');
+    _colorController = TextEditingController(text: item?.color ?? '');
+    _selectedCategory = item?.category ?? AssetCategory.electronics;
+
+    if (item == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _autoGenerateTag();
+      });
+    }
   }
 
-  void _updateGeneratedTagId() {
+  void _autoGenerateTag() {
+    if (widget.editingAsset != null) return;
     final provider = context.read<AssetProvider>();
     setState(() {
-      _generatedTagId = provider.generateUniqueTracebackId(_selectedCategory);
+      _tagIdController.text = provider.generateUniqueTracebackId(_selectedCategory);
     });
   }
 
@@ -58,608 +66,363 @@ class _RegisterBelongingScreenState extends State<RegisterBelongingScreen> {
     _nameController.dispose();
     _brandController.dispose();
     _modelController.dispose();
+    _serialController.dispose();
+    _tagIdController.dispose();
     _colorController.dispose();
-    _locationController.dispose();
     super.dispose();
   }
 
-  Future<void> _detectCurrentLocation() async {
-    setState(() => _isDetectingLocation = true);
-    try {
-      final result = await LocationService.getCurrentLocation();
-      if (mounted) {
-        setState(() {
-          _locationController.text = result.address;
-          _isDetectingLocation = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isDetectingLocation = false);
-    }
-  }
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  Future<void> _submitRegistration() async {
     setState(() => _isSaving = true);
+    final provider = context.read<AssetProvider>();
 
     try {
-      final provider = context.read<AssetProvider>();
-      final newAsset = await provider.registerBelonging(
-        name: _nameController.text.trim(),
-        category: _selectedCategory,
-        brand: _brandController.text.trim(),
-        model: _modelController.text.trim(),
-        color: _colorController.text.trim(),
-        address: _locationController.text.trim(),
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${newAsset.name} registered securely!'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
+      if (widget.editingAsset != null) {
+        final existing = widget.editingAsset!;
+        final updated = existing.copyWith(
+          name: _nameController.text.trim(),
+          category: _selectedCategory,
+          brand: _brandController.text.trim(),
+          model: _modelController.text.trim(),
+          color: _colorController.text.trim(),
+          description: _serialController.text.trim(),
+          tracebackId: _tagIdController.text.trim().isNotEmpty
+              ? _tagIdController.text.trim().toUpperCase()
+              : existing.tracebackId,
+          updatedAt: DateTime.now(),
         );
-        Navigator.pop(context, newAsset);
+        await provider.updateAsset(updated);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${updated.name} updated'),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          Navigator.pop(context, updated);
+        }
+      } else {
+        final newAsset = await provider.registerBelonging(
+          name: _nameController.text.trim(),
+          category: _selectedCategory,
+          brand: _brandController.text.trim(),
+          model: _modelController.text.trim(),
+          color: _colorController.text.trim(),
+          description: _serialController.text.trim(),
+          customTracebackId: _tagIdController.text.trim().isNotEmpty
+              ? _tagIdController.text.trim().toUpperCase()
+              : null,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${newAsset.name} registered'),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          Navigator.pop(context, newAsset);
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Registration failed: $e'),
+            content: Text('Error: $e'),
             backgroundColor: const Color(0xFFEF4444),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
     }
   }
 
-  void _goToNextStep() {
-    if (_currentStep == 0) {
-      setState(() => _currentStep = 1);
-    } else if (_currentStep == 1) {
-      if (_formKey.currentState!.validate()) {
-        setState(() => _currentStep = 2);
-      }
-    } else if (_currentStep == 2) {
-      _submitRegistration();
-    }
-  }
-
-  void _goToPrevStep() {
-    if (_currentStep > 0) {
-      setState(() => _currentStep -= 1);
-    } else {
-      Navigator.pop(context);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.editingAsset != null;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
-          onPressed: _goToPrevStep,
+          onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'REGISTER BELONGING',
-          style: TextStyle(
+        title: Text(
+          isEditing ? 'Edit Item' : 'Add Item',
+          style: const TextStyle(
             color: Colors.black,
-            fontSize: 14,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.0,
+            letterSpacing: -0.3,
           ),
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: const Color(0xFFE2E8F0), height: 1),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, color: Color(0xFFE2E8F0)),
         ),
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Minimal Step Progress Indicator
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF8FAFC),
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-              ),
-              child: Row(
-                children: [
-                  _stepBadge(0, 'Category'),
-                  _stepDivider(0),
-                  _stepBadge(1, 'Basic Info'),
-                  _stepDivider(1),
-                  _stepBadge(2, 'Confirm & Tag'),
-                ],
-              ),
-            ),
-
-            // Wizard Step Body
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: _buildCurrentStepContent(),
-              ),
-            ),
-
-            // Fixed bottom action bar
-            _buildBottomActionBar(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _stepBadge(int stepIndex, String label) {
-    final isActive = _currentStep == stepIndex;
-    final isDone = _currentStep > stepIndex;
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive
-                ? Colors.black
-                : isDone
-                    ? const Color(0xFF10B981)
-                    : const Color(0xFFCBD5E1),
-          ),
-          child: Center(
-            child: isDone
-                ? const Icon(Icons.check, size: 13, color: Colors.white)
-                : Text(
-                    '${stepIndex + 1}',
-                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Category Selector
+                const Text(
+                  'CATEGORY',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                    color: Color(0xFF64748B),
                   ),
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-            color: isActive ? Colors.black : const Color(0xFF64748B),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stepDivider(int stepIndex) {
-    final isDone = _currentStep > stepIndex;
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        height: 2,
-        color: isDone ? const Color(0xFF10B981) : const Color(0xFFE2E8F0),
-      ),
-    );
-  }
-
-  Widget _buildCurrentStepContent() {
-    switch (_currentStep) {
-      case 0:
-        return _buildStep1Category();
-      case 1:
-        return _buildStep2BasicInfo();
-      case 2:
-      default:
-        return _buildStep3Confirm();
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // STEP 1: CATEGORY
-  // ---------------------------------------------------------------------------
-  Widget _buildStep1Category() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Select Category',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            color: Colors.black,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Choose what type of belonging you want to protect with Traceback.',
-          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-        ),
-        const SizedBox(height: 20),
-
-        ..._categoryOptions.map((opt) {
-          final isSelected = _categoryLabel == opt['label'];
-          return GestureDetector(
-            onTap: () {
-              setState(() {
-                _categoryLabel = opt['label'] as String;
-                _selectedCategory = opt['category'] as AssetCategory;
-                _updateGeneratedTagId();
-              });
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFFF8FAFC) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isSelected ? Colors.black : const Color(0xFFE2E8F0),
-                  width: isSelected ? 1.8 : 1,
                 ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: isSelected ? Colors.black : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      opt['icon'] as IconData,
-                      size: 22,
-                      color: isSelected ? Colors.white : const Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          opt['label'] as String,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black),
+                const SizedBox(height: 10),
+                Row(
+                  children: _categories.map((cat) {
+                    final isSelected = _selectedCategory == cat['category'];
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedCategory = cat['category'] as AssetCategory;
+                            _autoGenerateTag();
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.black : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected ? Colors.black : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                cat['icon'] as IconData,
+                                color: isSelected ? Colors.white : Colors.black,
+                                size: 22,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                cat['label'] as String,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected ? Colors.white : const Color(0xFF64748B),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          opt['subtitle'] as String,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-                    color: isSelected ? Colors.black : const Color(0xFFCBD5E1),
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // STEP 2: BASIC INFO
-  // ---------------------------------------------------------------------------
-  Widget _buildStep2BasicInfo() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Basic Info',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: Colors.black,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Tell us about your $_categoryLabel so it can be identified accurately.',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-          ),
-          const SizedBox(height: 20),
-
-          // Name *
-          const Text(
-            'NAME *',
-            style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          TextFormField(
-            controller: _nameController,
-            decoration: _inputDecoration('e.g. My Campus Cycle, Silver MacBook Pro'),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Please enter a name for this item' : null,
-          ),
-          const SizedBox(height: 16),
-
-          // Brand
-          const Text(
-            'BRAND',
-            style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          TextFormField(
-            controller: _brandController,
-            decoration: _inputDecoration('e.g. Hero, Apple, Dell, Decathlon'),
-          ),
-          const SizedBox(height: 16),
-
-          // Model
-          const Text(
-            'MODEL',
-            style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          TextFormField(
-            controller: _modelController,
-            decoration: _inputDecoration('e.g. Sprint Pro 21-Speed, M2 14"'),
-          ),
-          const SizedBox(height: 16),
-
-          // Color
-          const Text(
-            'COLOR',
-            style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 6),
-          TextFormField(
-            controller: _colorController,
-            decoration: _inputDecoration('e.g. Matte Black, Space Gray, Navy Blue'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // STEP 3: CONFIRM & TAG
-  // ---------------------------------------------------------------------------
-  Widget _buildStep3Confirm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Confirm & Tag',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            color: Colors.black,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'A unique Traceback tag will be assigned to this belonging.',
-          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-        ),
-        const SizedBox(height: 20),
-
-        // Generated Traceback ID Card Preview
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                    );
+                  }).toList(),
                 ),
-                child: QrImageView(
-                  data: 'traceback://item/$_generatedTagId',
-                  size: 60,
-                  version: QrVersions.auto,
+                const SizedBox(height: 24),
+
+                // Item Name Field
+                _buildFieldLabel('ITEM NAME *'),
+                TextFormField(
+                  controller: _nameController,
+                  textCapitalization: TextCapitalization.words,
+                  validator: (val) => val == null || val.trim().isEmpty ? 'Please enter item name' : null,
+                  decoration: _buildInputDecoration(
+                    hintText: 'e.g. MacBook Air, Trek Bicycle',
+                    prefixIcon: Icons.label_outline_rounded,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const SizedBox(height: 18),
+
+                // Brand & Model Fields
+                Row(
                   children: [
-                    const Text(
-                      'GENERATED TRACEBACK ID',
-                      style: TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildFieldLabel('BRAND'),
+                          TextFormField(
+                            controller: _brandController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: _buildInputDecoration(
+                              hintText: 'e.g. Apple, Trek',
+                              prefixIcon: Icons.branding_watermark_outlined,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      _generatedTagId.isNotEmpty ? _generatedTagId : 'Generating...',
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        fontFamily: 'monospace',
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildFieldLabel('MODEL'),
+                          TextFormField(
+                            controller: _modelController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: _buildInputDecoration(
+                              hintText: 'e.g. M2 13", FX 2',
+                              prefixIcon: Icons.memory_rounded,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Row(
-                      children: [
-                        Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF10B981)),
-                        SizedBox(width: 4),
-                        Text(
-                          'Initial Status: SECURE',
-                          style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w700),
-                        ),
-                      ],
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
-        // Summary details box
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _summaryRow('Category', _categoryLabel),
-              const Divider(height: 16, color: Color(0xFFF1F5F9)),
-              _summaryRow('Name', _nameController.text.trim().isNotEmpty ? _nameController.text.trim() : '—'),
-              if (_brandController.text.trim().isNotEmpty) ...[
-                const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                _summaryRow('Brand', _brandController.text.trim()),
-              ],
-              if (_modelController.text.trim().isNotEmpty) ...[
-                const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                _summaryRow('Model', _modelController.text.trim()),
-              ],
-              if (_colorController.text.trim().isNotEmpty) ...[
-                const Divider(height: 16, color: Color(0xFFF1F5F9)),
-                _summaryRow('Color', _colorController.text.trim()),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-
-        // Registered Location
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'REGISTERED LOCATION',
-              style: TextStyle(color: Color(0xFF475569), fontSize: 11, fontWeight: FontWeight.w800),
-            ),
-            TextButton.icon(
-              onPressed: _isDetectingLocation ? null : _detectCurrentLocation,
-              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
-              icon: _isDetectingLocation
-                  ? const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                  : const Icon(Icons.my_location_rounded, size: 13, color: Colors.black),
-              label: const Text('Use GPS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.black)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        TextFormField(
-          controller: _locationController,
-          decoration: _inputDecoration('Campus address or location'),
-        ),
-      ],
-    );
-  }
-
-  Widget _summaryRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.black)),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // BOTTOM ACTION BAR
-  // ---------------------------------------------------------------------------
-  Widget _buildBottomActionBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
-      child: Row(
-        children: [
-          if (_currentStep > 0) ...[
-            SizedBox(
-              height: 48,
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.black,
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _goToPrevStep,
-                child: const Text('Back', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
-            ),
-            const SizedBox(width: 12),
-          ],
-          Expanded(
-            child: SizedBox(
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _isSaving ? null : _goToNextStep,
-                child: _isSaving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(
-                        _currentStep == 0
-                            ? 'Next: Basic Info'
-                            : _currentStep == 1
-                                ? 'Next: Confirm & Tag'
-                                : 'Register Belonging',
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                // Color & Serial Number Fields
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildFieldLabel('COLOR'),
+                          TextFormField(
+                            controller: _colorController,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: _buildInputDecoration(
+                              hintText: 'e.g. Space Gray, Blue',
+                              prefixIcon: Icons.palette_outlined,
+                            ),
+                          ),
+                        ],
                       ),
-              ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildFieldLabel('SERIAL NUMBER (OPTIONAL)'),
+                          TextFormField(
+                            controller: _serialController,
+                            decoration: _buildInputDecoration(
+                              hintText: 'e.g. C02G90...',
+                              prefixIcon: Icons.tag_rounded,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // Traceback Tag ID Field
+                _buildFieldLabel('TRACEBACK TAG ID *'),
+                TextFormField(
+                  controller: _tagIdController,
+                  textCapitalization: TextCapitalization.characters,
+                  validator: (val) => val == null || val.trim().isEmpty ? 'Tag ID is required' : null,
+                  decoration: _buildInputDecoration(
+                    hintText: 'e.g. TB-20481',
+                    prefixIcon: Icons.qr_code_rounded,
+                    suffixWidget: IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF64748B)),
+                      onPressed: _autoGenerateTag,
+                      tooltip: 'Generate new ID',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 36),
+
+                // Register / Save Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : Text(
+                            isEditing ? 'Save Changes' : 'Register Item',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 
-  InputDecoration _inputDecoration(String hint) {
+  Widget _buildFieldLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.8,
+          color: Color(0xFF64748B),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _buildInputDecoration({
+    required String hintText,
+    required IconData prefixIcon,
+    Widget? suffixWidget,
+  }) {
     return InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+      hintText: hintText,
+      hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+      prefixIcon: Icon(prefixIcon, size: 20, color: const Color(0xFF64748B)),
+      suffixIcon: suffixWidget,
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Colors.black, width: 1.5),
       ),
     );
