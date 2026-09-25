@@ -7,70 +7,96 @@ import 'package:flutter/services.dart';
 // value in the app. Import this file everywhere; never hardcode colors.
 // ─────────────────────────────────────────────────────────────────────────────
 
+class TbColors {
+  TbColors._();
+  static const Color background = Color(0xFF000000);
+  static const Color cardBackground = Color(0xFF111111);
+  static const Color cardBorder = Color(0x1FFFFFFF);
+  static const Color primary = Color(0xFFFF4500);
+  static const Color textPrimary = Color(0xFFFFFFFF);
+  static const Color textSecondary = Color(0xFFA1A1AA);
+  static const Color textMuted = Color(0xFF71717A);
+  static const Color textDisabled = Color(0xFF3F3F46);
+  static const Color statusLost = Color(0xFFEF4444);
+  static const Color statusFound = Color(0xFFF59E0B);
+  static const Color statusSafe = Color(0xFF10B981);
+  static const Color statusRecovered = Color(0xFF3B82F6);
+}
+
 class Tb {
   Tb._();
 
   // ── Colors ─────────────────────────────────────────────────────────────────
 
-  /// True background (near-black)
-  static const Color bg = Color(0xFF0A0A0B);
+  /// Pure or near-black background
+  static const Color bg = Color(0xFF000000);
+  static const Color bgSubtle = Color(0xFF050505);
 
-  /// Primary surface (dark charcoal)
-  static const Color surface = Color(0xFF111114);
+  /// Dark charcoal cards (#111111 / #151515)
+  static const Color card = Color(0xFF111111);
+  static const Color cardElevated = Color(0xFF151515);
+  static const Color surface = Color(0xFF111111);
+  static const Color surface2 = Color(0xFF161616);
+  static const Color surface3 = Color(0xFF202024);
 
-  /// Elevated surface (cards, dialogs)
-  static const Color surface2 = Color(0xFF1A1A1F);
-
-  /// Highest surface (selected states, tooltips)
-  static const Color surface3 = Color(0xFF222228);
-
-  /// Subtle 1px border
-  static const Color border = Color(0x14FFFFFF); // ~8% white
-
-  /// Stronger border (focused fields, dividers)
-  static const Color borderStrong = Color(0x26FFFFFF); // ~15% white
+  /// Subtle dark borders
+  static const Color border = Color(0x1FFFFFFF); // ~12% white subtle border
+  static const Color borderSubtle = Color(0x12FFFFFF); // ~7% white
+  static const Color borderStrong = Color(0x2EFFFFFF); // ~18% white
 
   /// Traceback accent — orange-red
   static const Color accent = Color(0xFFFF4500);
-
-  /// Accent dimmed background tint
   static const Color accentDim = Color(0x1AFF4500); // ~10% accent
 
-  /// Primary text — white
+  /// Primary text — pure white
   static const Color textPrimary = Color(0xFFFFFFFF);
 
-  /// Secondary text — 60% white
-  static const Color textSecondary = Color(0x99FFFFFF);
+  /// Secondary text — muted zinc grey
+  static const Color textSecondary = Color(0xFFA1A1AA);
 
-  /// Muted / placeholder text — 35% white
-  static const Color textMuted = Color(0x59FFFFFF);
+  /// Muted / placeholder text — 45% white
+  static const Color textMuted = Color(0xFF71717A);
 
-  /// Disabled text — 20% white
-  static const Color textDisabled = Color(0x33FFFFFF);
+  /// Disabled text — 25% white
+  static const Color textDisabled = Color(0xFF3F3F46);
 
-  /// Success green
-  static const Color success = Color(0xFF22C55E);
+  /// Success green (Safe)
+  static const Color success = Color(0xFF10B981);
+  static const Color successDim = Color(0x1F10B981);
 
-  /// Success dim background
-  static const Color successDim = Color(0x1A22C55E);
-
-  /// Warning amber
+  /// Warning amber (Found)
   static const Color warning = Color(0xFFF59E0B);
+  static const Color warningDim = Color(0x1FF59E0B);
 
-  /// Warning dim background
-  static const Color warningDim = Color(0x1AF59E0B);
-
-  /// Error / lost red
+  /// Error / lost red (Lost)
   static const Color error = Color(0xFFEF4444);
-
-  /// Error dim background
-  static const Color errorDim = Color(0x1AEF4444);
+  static const Color errorDim = Color(0x1FEF4444);
 
   /// Recovery blue
   static const Color recovery = Color(0xFF3B82F6);
+  static const Color recoveryDim = Color(0x1F3B82F6);
 
-  /// Recovery dim background
-  static const Color recoveryDim = Color(0x1A3B82F6);
+  /// Card floating shadow
+  static List<BoxShadow> get cardShadow => [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.55),
+      blurRadius: 18,
+      offset: const Offset(0, 6),
+    ),
+  ];
+
+  static List<BoxShadow> get subtleGlow => [
+    BoxShadow(
+      color: Colors.white.withOpacity(0.02),
+      blurRadius: 8,
+      offset: const Offset(0, -1),
+    ),
+    BoxShadow(
+      color: Colors.black.withOpacity(0.6),
+      blurRadius: 16,
+      offset: const Offset(0, 8),
+    ),
+  ];
 
   // ── Spacing ─────────────────────────────────────────────────────────────────
   static const double s2 = 2.0;
@@ -79,6 +105,7 @@ class Tb {
   static const double s8 = 8.0;
   static const double s10 = 10.0;
   static const double s12 = 12.0;
+  static const double s14 = 14.0;
   static const double s16 = 16.0;
   static const double s20 = 20.0;
   static const double s24 = 24.0;

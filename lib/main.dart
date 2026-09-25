@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'design/tb_theme.dart';
 import 'firebase_options.dart';
 import 'providers/asset_provider.dart';
+import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/storage_service.dart';
 import 'screens/login_screen.dart';
@@ -31,6 +32,9 @@ void main() async {
 
   final storageService = StorageService();
   await storageService.init();
+
+  // Initialize Traceback Node.js + MySQL REST API client
+  await ApiService().init();
 
   runApp(TracebackApp(storageService: storageService));
 }

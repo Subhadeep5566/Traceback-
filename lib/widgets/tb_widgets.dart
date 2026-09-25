@@ -6,13 +6,13 @@ import '../design/tb_theme.dart';
 // All reusable UI components used across multiple screens.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── TbStatusBadge ─────────────────────────────────────────────────────────────
-/// Coloured status pill: LOST / SAFE / FOUND / RECOVERED
-class TbStatusBadge extends StatelessWidget {
-  final String status; // raw status string from Asset.status.name
+// ── TracebackStatusBadge ───────────────────────────────────────────────────────
+/// Coloured status pill: LOST / SAFE / FOUND / RECOVERED with dot indicator
+class TracebackStatusBadge extends StatelessWidget {
+  final String status;
   final bool small;
 
-  const TbStatusBadge({super.key, required this.status, this.small = false});
+  const TracebackStatusBadge({super.key, required this.status, this.small = false});
 
   @override
   Widget build(BuildContext context) {
@@ -22,124 +22,114 @@ class TbStatusBadge extends StatelessWidget {
 
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: small ? Tb.s6 : Tb.s8,
-        vertical: small ? 2 : Tb.s4,
+        horizontal: small ? 8 : 10,
+        vertical: small ? 3 : 5,
       ),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(Tb.r6),
-        border: Border.all(color: color.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(Tb.r999),
+        border: Border.all(color: color.withOpacity(0.35), width: 1.0),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: small ? 9 : 10,
-          fontWeight: FontWeight.w900,
-          color: color,
-          letterSpacing: 0.8,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: small ? 5 : 6,
+            height: small ? 5 : 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: small ? 9.5 : 11,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ── TbButton ──────────────────────────────────────────────────────────────────
-enum TbButtonVariant { primary, secondary, ghost, danger }
+/// Backwards compatible alias
+typedef TbStatusBadge = TracebackStatusBadge;
 
-class TbButton extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final TbButtonVariant variant;
+// ── TracebackCard ─────────────────────────────────────────────────────────────
+/// Floating dark charcoal card with subtle border and floating surface shadow
+class TracebackCard extends StatefulWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+  final EdgeInsetsGeometry? margin;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final double borderRadius;
   final VoidCallback? onTap;
-  final bool loading;
-  final double? width;
-  final double height;
+  final Clip clipBehavior;
 
-  const TbButton({
+  const TracebackCard({
     super.key,
-    required this.label,
-    this.icon,
-    this.variant = TbButtonVariant.primary,
+    required this.child,
+    this.padding,
+    this.margin,
+    this.backgroundColor,
+    this.borderColor,
+    this.borderRadius = 22.0,
     this.onTap,
-    this.loading = false,
-    this.width,
-    this.height = 50,
+    this.clipBehavior = Clip.none,
   });
 
   @override
-  Widget build(BuildContext context) {
-    Color bg;
-    Color fg;
-    BoxBorder? border;
+  State<TracebackCard> createState() => _TracebackCardState();
+}
 
-    switch (variant) {
-      case TbButtonVariant.primary:
-        bg = Tb.accent;
-        fg = Colors.white;
-        break;
-      case TbButtonVariant.secondary:
-        bg = Tb.surface2;
-        fg = Tb.textPrimary;
-        border = Border.all(color: Tb.borderStrong);
-        break;
-      case TbButtonVariant.ghost:
-        bg = Colors.transparent;
-        fg = Tb.textSecondary;
-        border = Border.all(color: Tb.border);
-        break;
-      case TbButtonVariant.danger:
-        bg = Tb.errorDim;
-        fg = Tb.error;
-        border = Border.all(color: Tb.error.withOpacity(0.3));
-        break;
+class _TracebackCardState extends State<TracebackCard> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cardContent = Container(
+      margin: widget.margin,
+      padding: widget.padding ?? const EdgeInsets.all(20),
+      clipBehavior: widget.clipBehavior,
+      decoration: BoxDecoration(
+        color: widget.backgroundColor ?? Tb.card,
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        border: Border.all(
+          color: widget.borderColor ?? Tb.border,
+          width: 1.0,
+        ),
+        boxShadow: Tb.cardShadow,
+      ),
+      child: widget.child,
+    );
+
+    if (widget.onTap == null) {
+      return cardContent;
     }
 
     return GestureDetector(
-      onTap: loading ? null : onTap,
-      child: Container(
-        width: width ?? double.infinity,
-        height: height,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(Tb.r12),
-          border: border,
-        ),
-        child: loading
-            ? Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: fg,
-                  ),
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (icon != null) ...[
-                    Icon(icon, size: 17, color: fg),
-                    const SizedBox(width: Tb.s8),
-                  ],
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: fg,
-                      letterSpacing: 0.1,
-                    ),
-                  ),
-                ],
-              ),
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      onTap: widget.onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.982 : 1.0,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+        child: cardContent,
       ),
     );
   }
 }
 
-// ── TbCard ────────────────────────────────────────────────────────────────────
-/// Dark surface card with optional border highlight
+/// Backwards compatible alias for TbCard
 class TbCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets? padding;
@@ -158,56 +148,521 @@ class TbCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return TracebackCard(
+      padding: padding ?? const EdgeInsets.all(Tb.s16),
+      borderColor: borderColor,
       onTap: onTap,
-      child: Container(
-        padding: padding ?? const EdgeInsets.all(Tb.s16),
-        decoration: BoxDecoration(
-          color: backgroundColor ?? Tb.surface,
-          borderRadius: BorderRadius.circular(Tb.r16),
-          border: Border.all(
-            color: borderColor ?? Tb.border,
-            width: borderColor != null ? 1.5 : 1.0,
-          ),
+      backgroundColor: backgroundColor,
+      child: child,
+    );
+  }
+}
+
+// ── TracebackStatCard ─────────────────────────────────────────────────────────
+/// Compact statistics card for carousel / metrics
+class TracebackStatCard extends StatelessWidget {
+  final String count;
+  final String label;
+  final IconData icon;
+  final Color? countColor;
+  final Color? accentColor;
+  final VoidCallback? onTap;
+  final double width;
+
+  const TracebackStatCard({
+    super.key,
+    required this.count,
+    required this.label,
+    required this.icon,
+    this.countColor,
+    this.accentColor,
+    this.onTap,
+    this.width = 114,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = countColor ?? Tb.textPrimary;
+    final dotColor = accentColor ?? effectiveColor;
+
+    return TracebackCard(
+      onTap: onTap,
+      borderRadius: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: SizedBox(
+        width: width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: Tb.surface2,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Tb.borderSubtle),
+                  ),
+                  child: Icon(icon, size: 16, color: dotColor),
+                ),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: dotColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              count,
+              style: TextStyle(
+                color: effectiveColor,
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.8,
+                height: 1.1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Tb.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
-        child: child,
       ),
     );
   }
 }
 
-// ── TbSectionHeader ───────────────────────────────────────────────────────────
-class TbSectionHeader extends StatelessWidget {
+// ── TracebackActionCard ───────────────────────────────────────────────────────
+/// Compact floating action card with icon, title, description, and chevron
+class TracebackActionCard extends StatelessWidget {
   final String title;
+  final String description;
+  final IconData icon;
+  final Color? iconColor;
+  final Color? iconBg;
+  final VoidCallback onTap;
+
+  const TracebackActionCard({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.icon,
+    this.iconColor,
+    this.iconBg,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = iconColor ?? Tb.textPrimary;
+
+    return TracebackCard(
+      onTap: onTap,
+      borderRadius: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: iconBg ?? Tb.surface2,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Tb.borderSubtle),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Tb.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: Tb.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(
+            Icons.arrow_forward_ios_rounded,
+            color: Tb.textMuted,
+            size: 14,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum TracebackItemStatus { lost, found, safe, recovered }
+
+// ── TracebackItemCard ─────────────────────────────────────────────────────────
+/// Standard floating belonging item card
+class TracebackItemCard extends StatelessWidget {
+  final IconData icon;
+  final String? name;
+  final String? title;
+  final String tracebackId;
+  final dynamic status;
+  final String? location;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  const TracebackItemCard({
+    super.key,
+    required this.icon,
+    this.name,
+    this.title,
+    required this.tracebackId,
+    required this.status,
+    this.location,
+    required this.onTap,
+    this.trailing,
+  });
+
+  String get _effectiveName => name ?? title ?? 'Item';
+
+  String get _statusString {
+    if (status is TracebackItemStatus) {
+      switch (status as TracebackItemStatus) {
+        case TracebackItemStatus.lost:
+          return 'LOST';
+        case TracebackItemStatus.found:
+          return 'FOUND';
+        case TracebackItemStatus.safe:
+          return 'SAFE';
+        case TracebackItemStatus.recovered:
+          return 'RECOVERED';
+      }
+    }
+    return status.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TracebackCard(
+      onTap: onTap,
+      borderRadius: 22,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Tb.surface2,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Tb.borderSubtle),
+                ),
+                child: Icon(icon, color: Tb.textPrimary, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _effectiveName,
+                      style: const TextStyle(
+                        color: Tb.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      tracebackId,
+                      style: const TextStyle(
+                        color: Tb.textSecondary,
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (trailing != null)
+                trailing!
+              else
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Tb.textMuted,
+                  size: 14,
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              TracebackStatusBadge(status: _statusString, small: true),
+              if (location != null && location!.isNotEmpty)
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 12, color: Tb.textMuted),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          location!,
+                          style: const TextStyle(
+                            color: Tb.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── TracebackSectionHeader ────────────────────────────────────────────────────
+class TracebackSectionHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
   final String? action;
   final VoidCallback? onAction;
 
-  const TbSectionHeader({
+  const TracebackSectionHeader({
     super.key,
     required this.title,
+    this.subtitle,
     this.action,
     this.onAction,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(title.toUpperCase(), style: Tb.label),
-        if (action != null)
-          GestureDetector(
-            onTap: onAction,
-            child: Text(
-              action!,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title.toUpperCase(),
               style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Tb.accent,
+                color: Tb.textSecondary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
               ),
             ),
+            if (action != null)
+              GestureDetector(
+                onTap: onAction,
+                child: Text(
+                  action!,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Tb.textPrimary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 3),
+          Text(
+            subtitle!,
+            style: const TextStyle(
+              color: Tb.textMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+            ),
           ),
+        ],
       ],
+    );
+  }
+}
+
+/// Backwards compatible alias
+typedef TbSectionHeader = TracebackSectionHeader;
+
+// ── AnimatedCardEntrance ──────────────────────────────────────────────────────
+/// Subtle entrance animation for cards (staggered fade & slide up)
+class AnimatedCardEntrance extends StatelessWidget {
+  final Widget child;
+  final int index;
+  final int? delayMs;
+  final Duration duration;
+
+  const AnimatedCardEntrance({
+    super.key,
+    required this.child,
+    this.index = 0,
+    this.delayMs,
+    this.duration = const Duration(milliseconds: 320),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveDelayMs = delayMs ?? (index * 45).clamp(0, 300);
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: duration + Duration(milliseconds: effectiveDelayMs),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, animChild) {
+        final opacity = value.clamp(0.0, 1.0);
+        final offsetY = (1.0 - value) * 16.0;
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(0, offsetY),
+            child: animChild,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+// ── TracebackBottomNav ────────────────────────────────────────────────────────
+class TracebackNavItem {
+  final IconData icon;
+  final String label;
+
+  const TracebackNavItem({required this.icon, required this.label});
+}
+
+class TracebackBottomNav extends StatelessWidget {
+  final int currentIndex;
+  final List<TracebackNavItem> items;
+  final ValueChanged<int> onTabSelected;
+
+  const TracebackBottomNav({
+    super.key,
+    required this.currentIndex,
+    required this.items,
+    required this.onTabSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.transparent,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        0,
+        16,
+        MediaQuery.of(context).padding.bottom > 0 ? MediaQuery.of(context).padding.bottom : 12,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF101012),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: Tb.border, width: 1.0),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.7),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(items.length, (idx) {
+            final item = items[idx];
+            final isSelected = currentIndex == idx;
+
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => onTabSelected(idx),
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0x18FFFFFF) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        item.icon,
+                        size: 21,
+                        color: isSelected ? Colors.white : const Color(0xFF71717A),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        item.label,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                          color: isSelected ? Colors.white : const Color(0xFF71717A),
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 }
@@ -254,6 +709,43 @@ class TbAppBar extends StatelessWidget implements PreferredSizeWidget {
       bottom: PreferredSize(
         preferredSize: Size.fromHeight(bottomHeight),
         child: bottom ?? const Divider(height: 1, color: Tb.border),
+      ),
+    );
+  }
+}
+
+// ── TbButton ──────────────────────────────────────────────────────────────────
+class TbButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+  final double? width;
+  final double height;
+  final Color? color;
+  final Color? textColor;
+
+  const TbButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.width,
+    this.height = 48,
+    this.color,
+    this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color ?? Colors.white,
+          foregroundColor: textColor ?? Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Tb.r14)),
+        ),
+        onPressed: onTap,
+        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
       ),
     );
   }

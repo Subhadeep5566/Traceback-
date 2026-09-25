@@ -1,30 +1,29 @@
+import 'package:flutter/widgets.dart';
+
 /// MapConfig — single place to configure the map tile provider.
-///
-/// To switch to a CDN-backed provider for production, only change
-/// [tileUrlTemplate] and [userAgentPackageName]. Nothing else needs to change.
-///
-/// Tile provider options (no Google Maps):
-///   • OpenStreetMap (dev only, no key):
-///       https://tile.openstreetmap.org/{z}/{x}/{y}.png
-///   • Stadia Maps (free tier, key required):
-///       https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png?api_key=KEY
-///   • MapTiler (free tier, key required):
-///       https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=KEY
-///   • OpenFreeMap (free, no key, production-safe):
-///       https://tiles.openfreemap.org/tiles/liberty/{z}/{x}/{y}.pbf  (vector)
-///       Use raster fallback: https://tile.openstreetmap.org/{z}/{x}/{y}.png
 class MapConfig {
   MapConfig._();
 
   // ──────────────────────────────────────────────
-  // Tile provider — change only this URL to swap providers
+  // Tile provider — dark mode OpenStreetMap
   // ──────────────────────────────────────────────
 
-  /// Raster tile URL template. Supports {z}, {x}, {y} placeholders.
-  /// Current: OpenStreetMap (suitable for development/testing).
-  /// For production replace with a CDN-backed URL (see notes above).
+  /// Raster tile URL template (OpenStreetMap)
   static const String tileUrlTemplate =
       'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+  /// Dark tile shader filter to seamlessly invert OSM tiles into dark mode without watermark
+  static Widget darkTileBuilder(BuildContext context, Widget tileWidget, dynamic tile) {
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix(<double>[
+        -0.85, 0, 0, 0, 235,
+        0, -0.85, 0, 0, 235,
+        0, 0, -0.85, 0, 235,
+        0, 0, 0, 1, 0,
+      ]),
+      child: tileWidget,
+    );
+  }
 
   /// Identify your app to the tile server (required by OSM policy).
   static const String userAgentPackageName = 'com.traceback.app';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import '../widgets/tb_widgets.dart';
 import 'admin_cases_screen.dart';
 import 'admin_dashboard_screen.dart';
 import 'dashboard_screen.dart';
@@ -80,96 +81,37 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     final isAdmin = auth.isAdmin;
 
     return Scaffold(
+      backgroundColor: Colors.black,
+      extendBody: true,
       body: IndexedStack(
         index: _currentIndex,
         children: List.generate(5, (idx) => _getScreen(idx, isAdmin)),
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: const Border(
-            top: BorderSide(color: Color(0xFFF1F5F9), width: 1),
+      bottomNavigationBar: TracebackBottomNav(
+        currentIndex: _currentIndex,
+        onTabSelected: _onTabSelected,
+        items: [
+          const TracebackNavItem(
+            icon: Icons.home_rounded,
+            label: 'Home',
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavItem(
-                  index: 0,
-                  icon: Icons.home_rounded,
-                  label: 'Home',
-                ),
-                _buildNavItem(
-                  index: 1,
-                  icon: isAdmin ? Icons.assignment_rounded : Icons.inventory_2_rounded,
-                  label: isAdmin ? 'Cases' : 'Items',
-                ),
-                _buildNavItem(
-                  index: 2,
-                  icon: Icons.map_rounded,
-                  label: 'Map',
-                ),
-                _buildNavItem(
-                  index: 3,
-                  icon: Icons.search_rounded,
-                  label: 'Search',
-                ),
-                _buildNavItem(
-                  index: 4,
-                  icon: Icons.person_rounded,
-                  label: 'Profile',
-                ),
-              ],
-            ),
+          TracebackNavItem(
+            icon: isAdmin ? Icons.assignment_rounded : Icons.inventory_2_rounded,
+            label: isAdmin ? 'Cases' : 'Items',
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem({
-    required int index,
-    required IconData icon,
-    required String label,
-  }) {
-    final isSelected = _currentIndex == index;
-    final color = isSelected ? Colors.black : const Color(0xFF94A3B8);
-
-    return InkWell(
-      onTap: () => _onTabSelected(index),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 22,
-              color: color,
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
-                color: color,
-                letterSpacing: 0.6,
-              ),
-            ),
-          ],
-        ),
+          const TracebackNavItem(
+            icon: Icons.map_rounded,
+            label: 'Map',
+          ),
+          const TracebackNavItem(
+            icon: Icons.search_rounded,
+            label: 'Search',
+          ),
+          const TracebackNavItem(
+            icon: Icons.person_rounded,
+            label: 'Profile',
+          ),
+        ],
       ),
     );
   }

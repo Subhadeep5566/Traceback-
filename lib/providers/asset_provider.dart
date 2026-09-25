@@ -6,6 +6,7 @@ import '../models/found_item.dart';
 import '../models/incident.dart';
 import '../models/recovery_report.dart';
 import '../models/user_profile.dart';
+import '../services/api_service.dart';
 import '../services/demo_data_service.dart';
 import '../services/firestore_service.dart';
 import '../services/location_service.dart';
@@ -125,6 +126,8 @@ class AssetProvider extends ChangeNotifier {
       if (_assets.isNotEmpty) {
         _selectedAssetId = _assets.first.id;
       }
+      // Sync with Node.js + Express + MySQL backend
+      await syncWithBackend();
     } catch (e) {
       debugPrint('AssetProvider init error: $e');
       if (_assets.isEmpty) {
@@ -164,9 +167,102 @@ class AssetProvider extends ChangeNotifier {
   void setOwner(String ownerId) {
     _currentOwnerId = ownerId;
     if (!_isDemoMode) {
+      syncWithBackend();
       _syncWithFirestore(ownerId);
     }
     notifyListeners();
+  }
+
+  Future<void> syncWithBackend() async {
+    if (_isDemoMode) return;
+    try {
+      final api = ApiService();
+      if (!api.hasToken) return;
+
+      // 1. Fetch items from MySQL backend via Express
+      final itemsRes = await api.getItems();
+      if (itemsRes.isSuccess && itemsRes.data != null) {
+        final List<Asset> backendAssets = [];
+        for (final raw in itemsRes.data!) {
+          final row = raw as Map<String, dynamic>;
+          final id = row['id'].toString();
+          final tagId = row['tag_id']?.toString() ?? 'TB-ITEM-$id';
+          final name = row['name']?.toString() ?? 'Item';
+          final catStr = (row['category'] ?? 'belonging').toString().toLowerCase();
+          final category = AssetCategory.values.firstWhere(
+            (c) => c.name.toLowerCase() == catStr,
+            orElse: () => AssetCategory.belonging,
+          );
+          final statusStr = (row['status'] ?? 'safe').toString().toLowerCase();
+          AssetStatus status = AssetStatus.safe;
+          if (statusStr == 'lost') {
+            status = AssetStatus.lost;
+          } else if (statusStr == 'found') {
+            status = AssetStatus.found;
+          } else if (statusStr == 'recovered') {
+            status = AssetStatus.recovered;
+          } else {
+            status = AssetStatus.safe;
+          }
+
+          final location = row['last_detected_location']?.toString() ?? 'Campus Center';
+          final createdAt = DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now();
+
+          backendAssets.add(Asset(
+            id: id,
+            tracebackId: tagId,
+            ownerId: _currentOwnerId,
+            name: name,
+            category: category,
+            description: row['description']?.toString() ?? '',
+            status: status,
+            address: location,
+            lastSeenLocation: location,
+            createdAt: createdAt,
+            updatedAt: DateTime.tryParse(row['updated_at']?.toString() ?? '') ?? createdAt,
+            latitude: LocationService.bguCampusCenter.latitude,
+            longitude: LocationService.bguCampusCenter.longitude,
+            locationAccuracy: 8.0,
+            lastPing: createdAt,
+          ));
+        }
+
+        if (backendAssets.isNotEmpty) {
+          _assets = backendAssets;
+          if (_selectedAssetId == null || !_assets.any((a) => a.id == _selectedAssetId)) {
+            _selectedAssetId = _assets.first.id;
+          }
+          _persistAssetsAsync();
+        }
+      }
+
+      // 2. Fetch notifications from MySQL backend
+      final notifRes = await api.getNotifications();
+      if (notifRes.isSuccess && notifRes.data != null) {
+        final List<AppActivityNotification> backendNotifs = [];
+        for (final raw in notifRes.data!) {
+          final row = raw as Map<String, dynamic>;
+          backendNotifs.add(AppActivityNotification(
+            id: row['id'].toString(),
+            title: row['title']?.toString() ?? 'Notification',
+            subtitle: row['message']?.toString() ?? '',
+            assetId: row['item_id']?.toString() ?? '',
+            tracebackId: row['tag_id']?.toString() ?? '',
+            timestamp: DateTime.tryParse(row['created_at']?.toString() ?? '') ?? DateTime.now(),
+            isRead: row['is_read'] == 1 || row['is_read'] == true,
+            type: (row['title']?.toString().toLowerCase().contains('lost') ?? false) ? 'lost' : 'recovered',
+          ));
+        }
+        if (backendNotifs.isNotEmpty) {
+          _notifications = backendNotifs;
+          _persistNotificationsAsync();
+        }
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[AssetProvider.syncWithBackend error] $e');
+    }
   }
 
   Future<void> _syncWithFirestore(String ownerId) async {
@@ -457,6 +553,28 @@ class AssetProvider extends ChangeNotifier {
     );
 
     if (!_isDemoMode) {
+      if (ApiService().hasToken) {
+        try {
+          final res = await ApiService().createItem(
+            name: newAsset.name,
+            category: newAsset.category.name,
+            description: newAsset.description,
+            tagId: tracebackId,
+            lastDetectedLocation: itemAddress,
+            status: 'safe',
+          );
+          if (res.isSuccess && res.data != null) {
+            final serverId = res.data!['id']?.toString();
+            if (serverId != null) {
+              final serverAsset = newAsset.copyWith(id: serverId);
+              _assets[0] = serverAsset;
+              _selectedAssetId = serverId;
+            }
+          }
+        } catch (e) {
+          debugPrint('[AssetProvider.createItem error] $e');
+        }
+      }
       _firestoreService.saveBelonging(newAsset);
       _firestoreService.saveIncident(initialIncident);
       _firestoreService.sendNotification({
@@ -473,7 +591,7 @@ class AssetProvider extends ChangeNotifier {
 
     await _persistAll();
     notifyListeners();
-    return newAsset;
+    return _assets[0];
   }
 
   // Report General Found Item (Finder flow)
@@ -728,6 +846,14 @@ class AssetProvider extends ChangeNotifier {
     _selectedAssetId = target.id;
 
     if (!_isDemoMode) {
+      if (ApiService().hasToken) {
+        final loc = location.isNotEmpty ? location : target.address;
+        if (reportType == ReportType.found) {
+          ApiService().markItemFound(target.id, location: loc);
+        } else {
+          ApiService().markItemLost(target.id, location: loc, description: description);
+        }
+      }
       _firestoreService.saveFoundReport(report);
       _firestoreService.updateBelongingStatus(
         target.id,
@@ -1185,6 +1311,9 @@ class AssetProvider extends ChangeNotifier {
     }
 
     if (!_isDemoMode) {
+      if (ApiService().hasToken) {
+        ApiService().markItemFound(target.id);
+      }
       _firestoreService.updateBelongingStatus(target.id, AssetStatus.safe);
     }
 
@@ -1214,6 +1343,9 @@ class AssetProvider extends ChangeNotifier {
     if (index != -1) {
       _notifications[index] = _notifications[index].copyWith(isRead: true);
       _persistNotificationsAsync();
+      if (!_isDemoMode && ApiService().hasToken) {
+        ApiService().markNotificationRead(id);
+      }
       notifyListeners();
     }
   }
@@ -1244,6 +1376,15 @@ class AssetProvider extends ChangeNotifier {
       _assets[index] = asset;
       _persistAssetsAsync();
       if (!_isDemoMode) {
+        if (ApiService().hasToken) {
+          ApiService().updateItem(asset.id, {
+            'name': asset.name,
+            'category': asset.category.name,
+            'description': asset.description,
+            'status': asset.status.name,
+            'last_detected_location': asset.address,
+          });
+        }
         _firestoreService.saveBelonging(asset);
       }
       notifyListeners();
@@ -1254,6 +1395,9 @@ class AssetProvider extends ChangeNotifier {
     _assets.removeWhere((a) => a.id == assetId);
     _incidents.removeWhere((i) => i.assetId == assetId);
     if (!_isDemoMode) {
+      if (ApiService().hasToken) {
+        ApiService().deleteItem(assetId);
+      }
       _firestoreService.deleteBelonging(assetId);
     }
     await _persistAll();

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import 'package:provider/provider.dart';
+import '../design/tb_theme.dart';
 import '../models/asset.dart';
 import '../providers/asset_provider.dart';
 import '../services/location_service.dart';
+import '../widgets/tb_widgets.dart';
 import 'map_location_picker_screen.dart';
 
 class ReportItemScreen extends StatefulWidget {
@@ -25,9 +27,11 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
 
   String? _selectedAssetId;
-  DateTime _selectedDateTime = DateTime.now();
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = TimeOfDay.now();
   double? _latitude;
   double? _longitude;
   bool _isDetectingLocation = false;
@@ -37,7 +41,7 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
   void initState() {
     super.initState();
     _selectedAssetId = widget.initialAsset?.id ?? widget.initialAssetId;
-    _locationController.text = widget.initialAsset?.address ?? 'BGU Campus, Bhubaneswar';
+    _locationController.text = widget.initialAsset?.address ?? 'Main Campus, Bhubaneswar';
     _latitude = widget.initialAsset?.latitude ?? LocationService.bhubaneswarLatitude;
     _longitude = widget.initialAsset?.longitude ?? LocationService.bhubaneswarLongitude;
   }
@@ -46,33 +50,56 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
   void dispose() {
     _locationController.dispose();
     _notesController.dispose();
+    _descController.dispose();
     super.dispose();
   }
 
-  Future<void> _pickDateTime() async {
-    final pickedDate = await showDatePicker(
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDateTime,
+      initialDate: _selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: TbColors.primary,
+              surface: TbColors.cardBackground,
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: TbColors.cardBackground,
+          ),
+          child: child!,
+        );
+      },
     );
-    if (pickedDate == null || !mounted) return;
+    if (picked != null && mounted) {
+      setState(() => _selectedDate = picked);
+    }
+  }
 
-    final pickedTime = await showTimePicker(
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(_selectedDateTime),
+      initialTime: _selectedTime,
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: TbColors.primary,
+              surface: TbColors.cardBackground,
+              onSurface: Colors.white,
+            ),
+            dialogBackgroundColor: TbColors.cardBackground,
+          ),
+          child: child!,
+        );
+      },
     );
-    if (pickedTime == null || !mounted) return;
-
-    setState(() {
-      _selectedDateTime = DateTime(
-        pickedDate.year,
-        pickedDate.month,
-        pickedDate.day,
-        pickedTime.hour,
-        pickedTime.minute,
-      );
-    });
+    if (picked != null && mounted) {
+      setState(() => _selectedTime = picked);
+    }
   }
 
   Future<void> _detectLocation() async {
@@ -122,9 +149,14 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
   Future<void> _submitReport() async {
     if (_selectedAssetId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select an item'),
+        SnackBar(
+          content: const Text('Please select an item', style: TextStyle(color: Colors.white)),
+          backgroundColor: TbColors.cardBackground,
           behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: TbColors.cardBorder),
+          ),
         ),
       );
       return;
@@ -136,6 +168,20 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
     final provider = context.read<AssetProvider>();
 
     try {
+      final combinedDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
+
+      final combinedNotes = [
+        if (_descController.text.trim().isNotEmpty) 'Description: ${_descController.text.trim()}',
+        if (_notesController.text.trim().isNotEmpty) 'Additional Info: ${_notesController.text.trim()}',
+        'Reported lost on ${DateFormat('MMM d, h:mm a').format(combinedDateTime)}',
+      ].join('\n');
+
       await provider.reportLostOrStolen(
         assetId: _selectedAssetId!,
         reason: 'Lost',
@@ -143,19 +189,31 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
         coordinates: _latitude != null && _longitude != null
             ? ll.LatLng(_latitude!, _longitude!)
             : null,
-        notes: _notesController.text.trim().isNotEmpty
-            ? _notesController.text.trim()
-            : 'Reported lost on ${DateFormat('MMM d, h:mm a').format(_selectedDateTime)}',
+        notes: combinedNotes,
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Item marked as lost'),
-            backgroundColor: const Color(0xFFEF4444),
+            content: const Row(
+              children: [
+                Icon(Icons.radar_rounded, color: TbColors.statusLost, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Item marked as lost and flagged on campus radar',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: TbColors.cardBackground,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            duration: const Duration(seconds: 2),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0x33EF4444)),
+            ),
+            duration: const Duration(seconds: 3),
           ),
         );
         Navigator.pop(context);
@@ -165,9 +223,13 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
         setState(() => _isSubmitting = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Report failed: $e'),
-            backgroundColor: const Color(0xFFEF4444),
+            content: Text('Report failed: $e', style: const TextStyle(color: Colors.white)),
+            backgroundColor: TbColors.cardBackground,
             behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(color: TbColors.cardBorder),
+            ),
           ),
         );
       }
@@ -184,296 +246,547 @@ class _ReportItemScreenState extends State<ReportItemScreen> {
         }
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black, size: 18),
-              onPressed: () => Navigator.pop(context),
-            ),
-            title: const Text(
-              'Report Lost',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.3,
-              ),
-            ),
-            bottom: const PreferredSize(
-              preferredSize: Size.fromHeight(1),
-              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
-            ),
-          ),
+          backgroundColor: TbColors.background,
           body: SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 48),
               child: Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Item Selector
-                    const Text(
-                      'SELECT BELONGING *',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (availableAssets.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: const Text('No registered items found. Please register an item first.'),
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedAssetId,
-                            isExpanded: true,
-                            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.black),
-                            items: availableAssets.map((asset) {
-                              return DropdownMenuItem<String>(
-                                value: asset.id,
-                                child: Row(
-                                  children: [
-                                    Icon(asset.category.icon, size: 20, color: Colors.black),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        '${asset.name} (${asset.tracebackId})',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (newId) {
-                              if (newId != null) {
-                                setState(() {
-                                  _selectedAssetId = newId;
-                                  final chosen = availableAssets.firstWhere((a) => a.id == newId);
-                                  _locationController.text = chosen.address;
-                                });
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 20),
-
-                    // Last Known Location
-                    const Text(
-                      'LAST KNOWN LOCATION *',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _locationController,
-                      validator: (val) => val == null || val.trim().isEmpty ? 'Location is required' : null,
-                      decoration: InputDecoration(
-                        hintText: 'e.g. Library 2nd Floor, Campus Canteen',
-                        hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                        prefixIcon: const Icon(Icons.place_outlined, size: 20, color: Color(0xFF64748B)),
-                        suffixIcon: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: _isDetectingLocation
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.my_location_rounded, size: 20, color: Colors.black),
-                              onPressed: _isDetectingLocation ? null : _detectLocation,
-                              tooltip: 'Use current GPS location',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.map_rounded, size: 20, color: Color(0xFF0284C7)),
-                              onPressed: _pickOnMap,
-                              tooltip: 'Select on Google Map',
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+                    // Header with back button
                     Row(
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: _isDetectingLocation ? null : _detectLocation,
-                          icon: const Icon(Icons.my_location_rounded, size: 14),
-                          label: const Text('Use Current GPS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.black,
-                            side: const BorderSide(color: Color(0xFFE2E8F0)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        InkWell(
+                          onTap: () => Navigator.pop(context),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: TbColors.cardBackground,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: TbColors.cardBorder),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              color: Colors.white,
+                              size: 16,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          onPressed: _pickOnMap,
-                          icon: const Icon(Icons.map_rounded, size: 14),
-                          label: const Text('Select on Map', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF0284C7),
-                            side: const BorderSide(color: Color(0xFFBAE6FD)),
-                            backgroundColor: const Color(0xFFF0F9FF),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Report Lost Item',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Flag on campus radar for peer recovery',
+                                style: TextStyle(
+                                  color: TbColors.textMuted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
 
-                    // Date & Time Picker
-                    const Text(
-                      'DATE & TIME *',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: _pickDateTime,
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    const SizedBox(height: 24),
+
+                    // CARD 1: Selected Item
+                    AnimatedCardEntrance(
+                      delayMs: 40,
+                      child: TracebackCard(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.calendar_today_rounded, size: 18, color: Color(0xFF64748B)),
-                                const SizedBox(width: 10),
-                                Text(
-                                  DateFormat('EEEE, MMM d, yyyy · h:mm a').format(_selectedDateTime),
-                                  style: const TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.black,
+                            const TracebackSectionHeader(
+                              title: 'SELECTED ITEM',
+                              subtitle: 'Choose which registered belonging was lost',
+                            ),
+                            const SizedBox(height: 14),
+                            if (availableAssets.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  'No registered items found.',
+                                  style: TextStyle(color: TbColors.textMuted, fontSize: 13),
+                                ),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0A0A0A),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: TbColors.cardBorder),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _selectedAssetId,
+                                    dropdownColor: const Color(0xFF141416),
+                                    isExpanded: true,
+                                    icon: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: TbColors.textMuted,
+                                    ),
+                                    items: availableAssets.map((asset) {
+                                      return DropdownMenuItem<String>(
+                                        value: asset.id,
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 36,
+                                              height: 36,
+                                              decoration: BoxDecoration(
+                                                color: TbColors.cardBackground,
+                                                borderRadius: BorderRadius.circular(10),
+                                                border: Border.all(color: TbColors.cardBorder),
+                                              ),
+                                              child: Icon(
+                                                asset.category.icon,
+                                                size: 18,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    asset.name,
+                                                    style: const TextStyle(
+                                                      fontWeight: FontWeight.w700,
+                                                      fontSize: 14,
+                                                      color: Colors.white,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                  Text(
+                                                    '${asset.category.displayName} • ${asset.tracebackId}',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      color: TbColors.textMuted,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() => _selectedAssetId = val);
+                                      }
+                                    },
                                   ),
                                 ),
-                              ],
-                            ),
-                            const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
+                              ),
                           ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
 
-                    // Optional Note
-                    const Text(
-                      'OPTIONAL NOTE',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: Color(0xFF64748B),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _notesController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Any distinguishing marks, accessories, or context...',
-                        hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 36),
+                    const SizedBox(height: 14),
 
-                    // Submit Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isSubmitting ? null : _submitReport,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFEF4444),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                        child: _isSubmitting
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              )
-                            : const Text(
-                                'Report as Lost',
-                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                    // CARD 2: Last Seen Location Card
+                    AnimatedCardEntrance(
+                      delayMs: 80,
+                      child: TracebackCard(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const TracebackSectionHeader(
+                              title: 'LAST SEEN LOCATION',
+                              subtitle: 'Where was this item last in your possession?',
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _locationController,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
                               ),
+                              validator: (val) =>
+                                  val == null || val.trim().isEmpty ? 'Please specify location' : null,
+                              decoration: InputDecoration(
+                                hintText: 'e.g. Campus Library 2nd floor, Room 302',
+                                hintStyle: const TextStyle(fontSize: 13, color: TbColors.textMuted),
+                                prefixIcon: const Icon(
+                                  Icons.place_outlined,
+                                  size: 18,
+                                  color: TbColors.textMuted,
+                                ),
+                                filled: true,
+                                fillColor: const Color(0xFF0A0A0A),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: Colors.white30),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: _isDetectingLocation ? null : _detectLocation,
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 11),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF141416),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: TbColors.cardBorder),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          if (_isDetectingLocation)
+                                            const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          else
+                                            const Icon(
+                                              Icons.my_location_rounded,
+                                              size: 14,
+                                              color: Colors.white70,
+                                            ),
+                                          const SizedBox(width: 8),
+                                          const Text(
+                                            'Current GPS',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: _pickOnMap,
+                                    borderRadius: BorderRadius.circular(14),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 11),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF141416),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: TbColors.cardBorder),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.map_rounded,
+                                            size: 14,
+                                            color: Colors.white70,
+                                          ),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Select on Map',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // CARD 3: Date & Time in Dark Cards
+                    AnimatedCardEntrance(
+                      delayMs: 120,
+                      child: Row(
+                        children: [
+                          // Date Card
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickDate,
+                              borderRadius: BorderRadius.circular(20),
+                              child: TracebackCard(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'DATE LOST',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.6,
+                                        color: TbColors.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.calendar_today_rounded,
+                                          size: 14,
+                                          color: TbColors.textMuted,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          DateFormat('MMM d, yyyy').format(_selectedDate),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Time Card
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickTime,
+                              borderRadius: BorderRadius.circular(20),
+                              child: TracebackCard(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'APPROX TIME',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.6,
+                                        color: TbColors.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.access_time_rounded,
+                                          size: 14,
+                                          color: TbColors.textMuted,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _selectedTime.format(context),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // CARD 4: Description Card
+                    AnimatedCardEntrance(
+                      delayMs: 160,
+                      child: TracebackCard(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const TracebackSectionHeader(
+                              title: 'INCIDENT DESCRIPTION',
+                              subtitle: 'Briefly explain circumstances when you noticed it missing',
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _descController,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              maxLines: 2,
+                              decoration: InputDecoration(
+                                hintText: 'Left at table near south window after class...',
+                                hintStyle: const TextStyle(fontSize: 13, color: TbColors.textMuted),
+                                filled: true,
+                                fillColor: const Color(0xFF0A0A0A),
+                                contentPadding: const EdgeInsets.all(14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: Colors.white30),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // CARD 5: Additional Information Card
+                    AnimatedCardEntrance(
+                      delayMs: 200,
+                      child: TracebackCard(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const TracebackSectionHeader(
+                              title: 'DISTINGUISHING MARKS',
+                              subtitle: 'Stickers, scratches, case color, or unique serial info',
+                            ),
+                            const SizedBox(height: 14),
+                            TextFormField(
+                              controller: _notesController,
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              maxLines: 2,
+                              decoration: InputDecoration(
+                                hintText: 'Blue sticker on back, small dent on bottom left...',
+                                hintStyle: const TextStyle(fontSize: 13, color: TbColors.textMuted),
+                                filled: true,
+                                fillColor: const Color(0xFF0A0A0A),
+                                contentPadding: const EdgeInsets.all(14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(color: Colors.white30),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    // LARGE ACTION BUTTON: Report Lost
+                    AnimatedCardEntrance(
+                      delayMs: 240,
+                      child: InkWell(
+                        onTap: _isSubmitting ? null : _submitReport,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          width: double.infinity,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFDC2626), Color(0xFFB91C1C)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFDC2626).withOpacity(0.3),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          alignment: Alignment.center,
+                          child: _isSubmitting
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'Broadcast Lost Alert',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
                       ),
                     ),
                   ],

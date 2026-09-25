@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
+import '../services/api_service.dart';
 import '../services/demo_data_service.dart';
 import '../services/firestore_service.dart';
 import '../services/storage_service.dart';
@@ -196,6 +197,22 @@ class AuthService extends ChangeNotifier {
 
       String uid = 'user_${DateTime.now().millisecondsSinceEpoch}';
 
+      // 1. Register with Node.js + Express + MySQL Backend
+      final api = ApiService();
+      final apiRes = await api.register(
+        name: trimmedName,
+        email: normalizedEmail,
+        password: password,
+        phone: normalizedPhone,
+      );
+
+      if (!apiRes.isSuccess) {
+        return AuthResult.failure(apiRes.message ?? 'Registration failed');
+      } else if (apiRes.data?['user'] != null) {
+        final userData = apiRes.data!['user'] as Map<String, dynamic>;
+        uid = userData['id']?.toString() ?? uid;
+      }
+
       if (Firebase.apps.isNotEmpty) {
         try {
           final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -204,13 +221,8 @@ class AuthService extends ChangeNotifier {
           );
           await credential.user?.updateDisplayName(trimmedName);
           uid = credential.user?.uid ?? uid;
-        } on FirebaseAuthException catch (fe) {
-          if (fe.code == 'email-already-in-use') {
-            return AuthResult.failure('An account already exists with this email. Please sign in.');
-          } else if (fe.code == 'weak-password') {
-            return AuthResult.failure('The password provided is too weak.');
-          }
-          return AuthResult.failure(fe.message ?? 'Registration failed. Please try again.');
+        } on FirebaseAuthException catch (_) {
+          // Firebase fallback is non-fatal when MySQL succeeded
         }
       }
 
@@ -275,24 +287,27 @@ class AuthService extends ChangeNotifier {
       if (normalizedEmail.isEmpty) {
         return AuthResult.failure('Please enter your email address');
       }
-      if (!isValidEmail(normalizedEmail)) {
-        return AuthResult.failure('Please enter a valid email address');
-      }
-
       if (password == null || password.isEmpty) {
-        if (normalizedPhone.isEmpty) {
-          return AuthResult.failure('Please enter your phone number or password');
-        }
-        if (!isValidPhone(normalizedPhone)) {
-          return AuthResult.failure('Please enter a valid 10-digit phone number');
-        }
+        return AuthResult.failure('Please enter your password');
       }
 
       String uid = 'user_${DateTime.now().millisecondsSinceEpoch}';
       String name = _extractNameFromEmail(normalizedEmail);
       String userPhoneNum = normalizedPhone;
 
-      if (password != null && password.isNotEmpty && Firebase.apps.isNotEmpty) {
+      // 1. Authenticate with Node.js + Express + MySQL Backend
+      final api = ApiService();
+      final apiRes = await api.login(email: normalizedEmail, password: password);
+      if (apiRes.isSuccess && apiRes.data?['user'] != null) {
+        final userData = apiRes.data!['user'] as Map<String, dynamic>;
+        uid = userData['id']?.toString() ?? uid;
+        name = userData['name']?.toString() ?? name;
+        userPhoneNum = userData['phone']?.toString() ?? userPhoneNum;
+      } else if (!apiRes.isSuccess) {
+        return AuthResult.failure(apiRes.message ?? 'Invalid email or password');
+      }
+
+      if (Firebase.apps.isNotEmpty) {
         try {
           final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
             email: normalizedEmail,
@@ -307,13 +322,8 @@ class AuthService extends ChangeNotifier {
             name = remoteProfile.name;
             userPhoneNum = remoteProfile.phone;
           }
-        } on FirebaseAuthException catch (fe) {
-          if (fe.code == 'user-not-found') {
-            return AuthResult.failure('No account found for this email. Please register.');
-          } else if (fe.code == 'wrong-password' || fe.code == 'invalid-credential') {
-            return AuthResult.failure('Invalid email or password.');
-          }
-          return AuthResult.failure(fe.message ?? 'Authentication failed.');
+        } on FirebaseAuthException catch (_) {
+          // Firebase fallback non-fatal
         }
       }
 
@@ -348,6 +358,7 @@ class AuthService extends ChangeNotifier {
     try {
       _authMode = AuthMode.production;
       _userProfile = null;
+      await ApiService().clearAuth();
       if (Firebase.apps.isNotEmpty) {
         await FirebaseAuth.instance.signOut();
       }

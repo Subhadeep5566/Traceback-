@@ -46,3 +46,36 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Environment and backend secrets
+.env
+*.env
+backend/.env
+backend/node_modules/
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Emulator / screenshots / debug dumps
+*.png
+*.xml
+current_screen.png
+window_dump.xml
+parse_dump.js
+
+# Local development
+.env
+.env.*node_modules/
+functions/node_modules/
+
+.env
+.env.*
+*.png
+*.xml
+
+current_screen.png
+window_dump.xml
+parse_dump.js
+
+

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../design/tb_theme.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/tb_widgets.dart';
+import 'my_belongings_screen.dart';
+import 'notifications_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -29,19 +33,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Edit Account', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        backgroundColor: const Color(0xFF141416),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: TbColors.cardBorder),
+        ),
+        title: const Text(
+          'Personal Information',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'Full Name'),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                labelText: 'Full Name',
+                labelStyle: const TextStyle(color: TbColors.textMuted),
+                filled: true,
+                fillColor: const Color(0xFF0A0A0A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Colors.white30),
+                ),
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextField(
               controller: phoneCtrl,
-              decoration: const InputDecoration(labelText: 'Phone Number'),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                labelText: 'Phone Number',
+                labelStyle: const TextStyle(color: TbColors.textMuted),
+                filled: true,
+                fillColor: const Color(0xFF0A0A0A),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: TbColors.cardBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Colors.white30),
+                ),
+              ),
               keyboardType: TextInputType.phone,
             ),
           ],
@@ -49,13 +100,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+            child: const Text('Cancel', style: TextStyle(color: TbColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
               final newName = nameCtrl.text.trim();
@@ -69,55 +120,159 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (ctx.mounted) Navigator.pop(ctx);
               if (mounted) setState(() {});
             },
-            child: const Text('Save'),
+            child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
   }
 
-  void _showPrivacySheet(BuildContext context) {
-    showModalBottomSheet(
+  void _showSecurityDialog(BuildContext context) {
+    showDialog(
       context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Privacy Settings',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 16),
-              SwitchListTile(
-                title: const Text('Safe Finder Contact', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                subtitle: const Text('Allow finder to view campus recovery desk without exposing private phone.', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                value: _shareContactWithFinder,
-                activeColor: Colors.black,
-                contentPadding: EdgeInsets.zero,
-                onChanged: (val) {
-                  setState(() => _shareContactWithFinder = val);
-                  context.read<StorageService>().saveSetting('share_contact', val);
-                  Navigator.pop(ctx);
-                },
-              ),
-            ],
-          ),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141416),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: TbColors.cardBorder),
         ),
+        title: const Text(
+          'Security & Privacy',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Traceback uses campus-grade encrypted tokens to protect your contact data when belongings are scanned.',
+              style: TextStyle(fontSize: 13, color: TbColors.textMuted, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text(
+                'Safe Finder Contact',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white),
+              ),
+              subtitle: const Text(
+                'Mask direct phone number until item is safely identified.',
+                style: TextStyle(fontSize: 11, color: TbColors.textMuted),
+              ),
+              value: _shareContactWithFinder,
+              activeColor: Colors.white,
+              activeTrackColor: Colors.white38,
+              contentPadding: EdgeInsets.zero,
+              onChanged: (val) {
+                setState(() => _shareContactWithFinder = val);
+                context.read<StorageService>().saveSetting('share_contact', val);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Done', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHelpSupportDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141416),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: TbColors.cardBorder),
+        ),
+        title: const Text(
+          'Campus Operations Desk',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Lost & Found Hub:',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Location: Main Gate Security Office\nPhone: +91 674 237 8000\nEmail: lostfound@campus.edu',
+              style: TextStyle(fontSize: 13, color: TbColors.textMuted, height: 1.5),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Hours: Monday - Saturday (8:00 AM - 8:00 PM)',
+              style: TextStyle(fontSize: 11, color: TbColors.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
     );
   }
 
   Future<void> _logout() async {
-    final auth = context.read<AuthService>();
-    await auth.logout();
-    if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF141416),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: TbColors.cardBorder),
+        ),
+        title: const Text(
+          'Sign Out?',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+        ),
+        content: const Text(
+          'Are you sure you want to sign out from Traceback?',
+          style: TextStyle(fontSize: 13, color: TbColors.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: TbColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final auth = context.read<AuthService>();
+      await auth.logout();
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      }
     }
   }
 
@@ -126,138 +281,292 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Consumer<AuthService>(
       builder: (context, auth, child) {
         final profile = auth.currentUserProfile;
-        final name = profile.name.isNotEmpty ? profile.name : 'Subhadeep';
-        final email = profile.email.isNotEmpty ? profile.email : 'student@bgu.ac.in';
-        final phone = profile.phone.isNotEmpty ? profile.phone : '9876543210';
+        final name = profile.name.isNotEmpty ? profile.name : (auth.userName ?? 'Subhadeep');
+        final email = profile.email.isNotEmpty ? profile.email : (auth.userEmail ?? 'subhadeep@campus.edu');
+        final phone = profile.phone.isNotEmpty ? profile.phone : (auth.userPhone ?? '9876543210');
         final initial = name.isNotEmpty ? name[0].toUpperCase() : 'S';
 
         return Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            title: const Text(
-              'Profile',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.4,
-              ),
-            ),
-            bottom: const PreferredSize(
-              preferredSize: Size.fromHeight(1),
-              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
-            ),
-          ),
+          backgroundColor: TbColors.background,
           body: SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 48),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Profile Photo / Avatar & Info Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
+                  const Text(
+                    'Profile',
+                    style: TextStyle(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.02),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        CircleAvatar(
-                          radius: 36,
-                          backgroundColor: Colors.black,
-                          child: Text(
-                            initial,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.black,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          email,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '+91 $phone',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF94A3B8),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.6,
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Manage campus account, privacy, and preferences',
+                    style: TextStyle(
+                      color: TbColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+
                   const SizedBox(height: 24),
 
-                  // Simple Settings Card
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                  // 1. [ PROFILE CARD ]
+                  AnimatedCardEntrance(
+                    delayMs: 30,
+                    child: TracebackCard(
+                      padding: const EdgeInsets.all(20),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1C1C20),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white24, width: 1.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.white.withOpacity(0.06),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: -0.3,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  email,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: TbColors.textMuted,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  phone.startsWith('+') ? phone : '+91 $phone',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF888890),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => _showEditAccountDialog(context, auth),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1C1C20),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: TbColors.cardBorder),
+                              ),
+                              child: const Icon(
+                                Icons.edit_outlined,
+                                color: Colors.white70,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      children: [
-                        _buildSettingTile(
-                          icon: Icons.person_outline_rounded,
-                          title: 'Account',
-                          onTap: () => _showEditAccountDialog(context, auth),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // 2. [ ACCOUNT CARD ]
+                  AnimatedCardEntrance(
+                    delayMs: 60,
+                    child: TracebackCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(4, 10, 4, 8),
+                            child: TracebackSectionHeader(
+                              title: 'ACCOUNT & ASSETS',
+                              subtitle: 'Manage your verified items on campus',
+                            ),
+                          ),
+                          _buildProfileRow(
+                            icon: Icons.inventory_2_outlined,
+                            title: 'Registered Belongings',
+                            subtitle: 'View, edit, or remove your campus items',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const MyBelongingsScreen()),
+                              );
+                            },
+                          ),
+                          const Divider(color: TbColors.cardBorder, height: 1),
+                          _buildProfileRow(
+                            icon: Icons.person_outline_rounded,
+                            title: 'Personal Information',
+                            subtitle: 'Name, contact phone, and campus email',
+                            onTap: () => _showEditAccountDialog(context, auth),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // 3. [ ACTIVITY & NOTIFICATIONS CARD ]
+                  AnimatedCardEntrance(
+                    delayMs: 90,
+                    child: TracebackCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(4, 10, 4, 8),
+                            child: TracebackSectionHeader(
+                              title: 'ACTIVITY & ALERTS',
+                              subtitle: 'Radar scan alerts and push updates',
+                            ),
+                          ),
+                          _buildProfileRow(
+                            icon: Icons.notifications_none_rounded,
+                            title: 'Push Notifications',
+                            subtitle: 'Receive alerts when belongings are scanned',
+                            trailing: Switch(
+                              value: _notificationsEnabled,
+                              activeColor: Colors.white,
+                              activeTrackColor: Colors.white38,
+                              onChanged: (val) {
+                                setState(() => _notificationsEnabled = val);
+                                context.read<StorageService>().saveSetting('notifications_enabled', val);
+                              },
+                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // 4. [ SETTINGS & PRIVACY CARD ]
+                  AnimatedCardEntrance(
+                    delayMs: 120,
+                    child: TracebackCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(4, 10, 4, 8),
+                            child: TracebackSectionHeader(
+                              title: 'SECURITY & PRIVACY',
+                              subtitle: 'Finder masking and encrypted contact',
+                            ),
+                          ),
+                          _buildProfileRow(
+                            icon: Icons.shield_outlined,
+                            title: 'Privacy & Token Masking',
+                            subtitle: 'Hide contact until item verified by finder',
+                            onTap: () => _showSecurityDialog(context),
+                          ),
+                          const Divider(color: TbColors.cardBorder, height: 1),
+                          _buildProfileRow(
+                            icon: Icons.help_outline_rounded,
+                            title: 'Campus Lost & Found Desk',
+                            subtitle: 'Main Gate contact, hours, and emergency help',
+                            onTap: () => _showHelpSupportDialog(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 22),
+
+                  // 5. [ LOGOUT CARD ]
+                  AnimatedCardEntrance(
+                    delayMs: 150,
+                    child: InkWell(
+                      onTap: _logout,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF140F0F),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0x33DC2626)),
                         ),
-                        const Divider(height: 1, indent: 54, color: Color(0xFFF1F5F9)),
-                        _buildSwitchTile(
-                          icon: Icons.notifications_none_rounded,
-                          title: 'Notifications',
-                          value: _notificationsEnabled,
-                          onChanged: (val) {
-                            setState(() => _notificationsEnabled = val);
-                            context.read<StorageService>().saveSetting('notifications_enabled', val);
-                          },
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.logout_rounded,
+                              color: Color(0xFFEF4444),
+                              size: 20,
+                            ),
+                            SizedBox(width: 14),
+                            Expanded(
+                              child: Text(
+                                'Sign Out of Traceback',
+                                style: TextStyle(
+                                  color: Color(0xFFEF4444),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: Color(0xFFEF4444),
+                              size: 20,
+                            ),
+                          ],
                         ),
-                        const Divider(height: 1, indent: 54, color: Color(0xFFF1F5F9)),
-                        _buildSettingTile(
-                          icon: Icons.lock_outline_rounded,
-                          title: 'Privacy',
-                          onTap: () => _showPrivacySheet(context),
-                        ),
-                        const Divider(height: 1, indent: 54, color: Color(0xFFF1F5F9)),
-                        _buildSettingTile(
-                          icon: Icons.logout_rounded,
-                          title: 'Logout',
-                          titleColor: const Color(0xFFEF4444),
-                          iconColor: const Color(0xFFEF4444),
-                          onTap: _logout,
-                          hideArrow: true,
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
@@ -269,67 +578,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSettingTile({
+  Widget _buildProfileRow({
     required IconData icon,
     required String title,
+    required String subtitle,
     required VoidCallback onTap,
-    Color titleColor = Colors.black,
-    Color iconColor = Colors.black,
-    bool hideArrow = false,
+    Widget? trailing,
   }) {
-    return ListTile(
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: iconColor.withOpacity(0.08),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: iconColor, size: 18),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14.5,
-          fontWeight: FontWeight.w700,
-          color: titleColor,
-        ),
-      ),
-      trailing: hideArrow
-          ? null
-          : const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF94A3B8), size: 14),
+    return InkWell(
       onTap: onTap,
-    );
-  }
-
-  Widget _buildSwitchTile({
-    required IconData icon,
-    required String title,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return ListTile(
-      leading: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.08),
-          shape: BoxShape.circle,
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0A),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: TbColors.cardBorder),
+              ),
+              child: Icon(icon, color: Colors.white70, size: 18),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: TbColors.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null)
+              trailing
+            else
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: TbColors.textMuted,
+              ),
+          ],
         ),
-        child: Icon(icon, color: Colors.black, size: 18),
-      ),
-      title: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 14.5,
-          fontWeight: FontWeight.w700,
-          color: Colors.black,
-        ),
-      ),
-      trailing: Switch.adaptive(
-        value: value,
-        activeColor: Colors.black,
-        onChanged: onChanged,
       ),
     );
   }

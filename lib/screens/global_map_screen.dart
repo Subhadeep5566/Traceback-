@@ -11,6 +11,7 @@ import '../services/firestore_service.dart';
 import '../services/location_service.dart';
 import 'asset_detail_screen.dart';
 import 'found_item_screen.dart';
+import '../design/tb_theme.dart';
 
 // ────────────────────────────────────────────────
 // Data model used by the map to represent a pin
@@ -278,6 +279,7 @@ class _GlobalMapScreenState extends State<GlobalMapScreen>
     final markers = _buildMarkers(pins);
 
     return Scaffold(
+      backgroundColor: const Color(0xFF080808),
       body: Stack(
         children: [
           // ── Map ─────────────────────────────────
@@ -297,6 +299,7 @@ class _GlobalMapScreenState extends State<GlobalMapScreen>
                 urlTemplate: MapConfig.tileUrlTemplate,
                 userAgentPackageName: MapConfig.userAgentPackageName,
                 maxZoom: MapConfig.maxZoom,
+                tileBuilder: MapConfig.darkTileBuilder,
               ),
               MarkerLayer(markers: markers),
             ],
@@ -306,12 +309,45 @@ class _GlobalMapScreenState extends State<GlobalMapScreen>
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: _FilterBar(
-                active: _activeFilter,
-                onChange: (v) => setState(() {
-                  _activeFilter = v;
-                  _selectedPin = null;
-                }),
+              child: Row(
+                children: [
+                  if (Navigator.canPop(context)) ...[
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141416),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: TbColors.cardBorder),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: _FilterBar(
+                      active: _activeFilter,
+                      onChange: (v) => setState(() {
+                        _activeFilter = v;
+                        _selectedPin = null;
+                      }),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -419,13 +455,14 @@ class _FilterBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF141416),
         borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: TbColors.cardBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withOpacity(0.3),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -463,7 +500,7 @@ class _Chip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? Colors.black : Colors.transparent,
+          color: selected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -480,7 +517,7 @@ class _Chip extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
-              color: selected ? Colors.white : const Color(0xFF475569),
+              color: selected ? Colors.black : TbColors.textMuted,
             ),
           ),
         ]),
@@ -507,24 +544,39 @@ class _MapFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton.small(
-      heroTag: heroTag,
-      backgroundColor: light ? Colors.white : Colors.black,
-      foregroundColor: light ? Colors.black : Colors.white,
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      tooltip: tooltip,
-      onPressed: onTap,
-      child: loading
-          ? SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: light ? Colors.black : Colors.white,
-              ),
-            )
-          : Icon(icon, size: 18),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF141416),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: TbColors.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Icon(icon, size: 18, color: Colors.white),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -547,17 +599,17 @@ class _PinInfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF141416),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: pin.type == _PinType.lostAsset
-              ? const Color(0xFFFECDD3)
-              : const Color(0xFFE2E8F0),
+              ? const Color(0x66EF4444)
+              : TbColors.cardBorder,
           width: pin.type == _PinType.lostAsset ? 1.5 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.12),
+            color: Colors.black.withOpacity(0.4),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
@@ -573,8 +625,9 @@ class _PinInfoCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: pin.color.withOpacity(0.1),
+                  color: pin.color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: pin.color.withOpacity(0.3)),
                 ),
                 child: Icon(pin.icon, size: 22, color: pin.color),
               ),
@@ -587,18 +640,18 @@ class _PinInfoCard extends StatelessWidget {
                       pin.title,
                       style: const TextStyle(
                         fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.black,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Row(children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
-                          color: pin.color.withOpacity(0.1),
+                          color: pin.color.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -613,7 +666,7 @@ class _PinInfoCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       Text(
                         pin.timeAgo,
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                        style: const TextStyle(fontSize: 11, color: TbColors.textMuted),
                       ),
                     ]),
                   ],
@@ -626,10 +679,11 @@ class _PinInfoCard extends StatelessWidget {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: const Color(0xFF222226),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: TbColors.cardBorder),
                   ),
-                  child: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
+                  child: const Icon(Icons.close_rounded, size: 16, color: Colors.white70),
                 ),
               ),
             ],
@@ -639,12 +693,16 @@ class _PinInfoCard extends StatelessWidget {
 
           // ── Location row ────────────
           Row(children: [
-            const Icon(Icons.place_rounded, size: 13, color: Color(0xFF94A3B8)),
+            const Icon(Icons.place_rounded, size: 13, color: TbColors.textMuted),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
                 pin.location,
-                style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: TbColors.textMuted,
+                  fontWeight: FontWeight.w600,
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -698,20 +756,21 @@ class _CardButton extends StatelessWidget {
       child: Container(
         height: 40,
         decoration: BoxDecoration(
-          color: primary ? Colors.black : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(10),
+          color: primary ? Colors.white : const Color(0xFF222226),
+          borderRadius: BorderRadius.circular(12),
+          border: primary ? null : Border.all(color: TbColors.cardBorder),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 15, color: primary ? Colors.white : Colors.black),
+            Icon(icon, size: 15, color: primary ? Colors.black : Colors.white),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
-                color: primary ? Colors.white : Colors.black,
+                color: primary ? Colors.black : Colors.white,
               ),
             ),
           ],
